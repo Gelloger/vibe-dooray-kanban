@@ -158,6 +158,28 @@ export function useDoorayTags(doorayProjectId: string | null) {
 }
 
 /**
+ * Hook for updating selected project
+ */
+export function useUpdateDoorayProject() {
+  const queryClient = useQueryClient();
+
+  const { mutateAsync: updateSelectedProject, isPending } = useMutation({
+    mutationFn: ({ projectId, projectName }: { projectId: string; projectName: string }) =>
+      doorayApi.updateSelectedProject(projectId, projectName),
+    onSuccess: (newSettings) => {
+      queryClient.setQueryData(DOORAY_KEYS.settings, newSettings);
+      // Invalidate tags since they are project-specific
+      queryClient.invalidateQueries({ queryKey: ['dooray', 'tags'] });
+    },
+  });
+
+  return {
+    updateSelectedProject,
+    isUpdating: isPending,
+  };
+}
+
+/**
  * Hook for updating selected tags
  */
 export function useUpdateDoorayTags() {

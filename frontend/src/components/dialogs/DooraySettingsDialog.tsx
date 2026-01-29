@@ -13,17 +13,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Check, Link2Off, RefreshCw, Tag, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, Check, Link2Off, RefreshCw, Tag, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react';
 import {
   useDooraySettings,
   useDooraySync,
   useDoorayTags,
   useUpdateDoorayTags,
   useDoorayImportByNumber,
+  useDoorayProjects,
+  useUpdateDoorayProject,
 } from '@/hooks/useDooray';
-import type { SyncResult, ImportResult } from 'shared/types';
+import type { SyncResult, ImportResult, DoorayProject } from 'shared/types';
 
-type Step = 'token' | 'connected' | 'tags';
+type Step = 'token' | 'projects' | 'connected' | 'tags';
 
 export interface DooraySettingsDialogProps {
   projectId?: string; // Local vibe-kanban project ID for sync
@@ -56,13 +58,20 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
     const { tagGroups, isLoading: isLoadingTags } = useDoorayTags(settings?.selected_project_id || null);
     const { updateSelectedTags, isUpdating: isUpdatingTags } = useUpdateDoorayTags();
     const { importByNumber, isImporting } = useDoorayImportByNumber();
+    const { projects, isLoading: isLoadingProjects } = useDoorayProjects(isConnected);
+    const { updateSelectedProject, isUpdating: isUpdatingProject } = useUpdateDoorayProject();
 
     // Initialize state based on existing settings
     useEffect(() => {
       if (isLoadingSettings) return;
 
       if (isConnected && settings) {
-        setStep('connected');
+        // If connected but no project selected, go to project selection
+        if (!settings.selected_project_id) {
+          setStep('projects');
+        } else {
+          setStep('connected');
+        }
         // Load selected tags from settings
         if (settings.selected_tag_ids) {
           try {
@@ -94,7 +103,8 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
 
         // Check if save was successful (backend returns masked token if success)
         if (result?.dooray_token) {
-          setStep('connected');
+          // Go to project selection step
+          setStep('projects');
         }
       } catch (err) {
         console.error('Failed to save Dooray token:', err);
@@ -103,18 +113,35 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
     };
 
     const handleSync = async () => {
-      if (!settings?.selected_project_id || !projectId) return;
+      if (!settings?.selected_project_id || !settings?.selected_project_name || !projectId) return;
 
       try {
         const result = await syncTasks({
           project_id: projectId,
           dooray_project_id: settings.selected_project_id,
-          dooray_project_code: settings.selected_project_name || 'Notification-개발',
+          dooray_project_code: settings.selected_project_name,
         });
         setSyncResult(result);
       } catch (err) {
         console.error('Failed to sync tasks:', err);
       }
+    };
+
+    const handleSelectProject = async (project: DoorayProject) => {
+      try {
+        await updateSelectedProject({
+          projectId: project.id,
+          projectName: project.code,
+        });
+        setSelectedTagIds(new Set()); // Clear tag selection when project changes
+        setStep('connected');
+      } catch (err) {
+        console.error('Failed to select project:', err);
+      }
+    };
+
+    const handleChangeProject = () => {
+      setStep('projects');
     };
 
     const handleDisconnect = async () => {
@@ -184,14 +211,14 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
     };
 
     const handleImportByNumber = async () => {
-      if (!taskNumber.trim() || !settings?.selected_project_id || !projectId) return;
+      if (!taskNumber.trim() || !settings?.selected_project_id || !settings?.selected_project_name || !projectId) return;
       setImportResult(null);
 
       try {
         const result = await importByNumber({
           project_id: projectId,
           dooray_project_id: settings.selected_project_id,
-          dooray_project_code: settings.selected_project_name || 'Notification-개발',
+          dooray_project_code: settings.selected_project_name,
           task_number: BigInt(parseInt(taskNumber, 10)),
         });
         setImportResult(result);
@@ -222,7 +249,7 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
         <DialogHeader>
           <DialogTitle>Dooray 연동 설정</DialogTitle>
           <DialogDescription>
-            Dooray API 토큰을 입력하여 Notification-개발 프로젝트와 연동합니다.
+            Dooray API 토큰을 입력하여 프로젝트와 연동합니다.
           </DialogDescription>
         </DialogHeader>
         <DialogContent>
@@ -267,23 +294,94 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
       </>
     );
 
+    const renderProjectsStep = () => (
+      <>
+        <DialogHeader>
+          <DialogTitle>프로젝트 선택</DialogTitle>
+          <DialogDescription>
+            동기화할 Dooray 프로젝트를 선택하세요.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            {isLoadingProjects ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : projects.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                접근 가능한 프로젝트가 없습니다.
+              </p>
+            ) : (
+              projects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  className="w-full flex items-center gap-3 p-3 border rounded-md hover:bg-muted/50 transition-colors text-left"
+                  onClick={() => handleSelectProject(project)}
+                  disabled={isUpdatingProject}
+                >
+                  <FolderOpen className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm truncate">{project.code}</div>
+                    {project.description && (
+                      <div className="text-xs text-muted-foreground truncate">
+                        {project.description}
+                      </div>
+                    )}
+                  </div>
+                  {settings?.selected_project_id === project.id && (
+                    <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+        <DialogFooter className="gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (settings?.selected_project_id) {
+                setStep('connected');
+              } else {
+                handleDisconnect();
+              }
+            }}
+          >
+            {settings?.selected_project_id ? '취소' : '연결 해제'}
+          </Button>
+        </DialogFooter>
+      </>
+    );
+
     const renderConnectedStep = () => (
       <>
         <DialogHeader>
           <DialogTitle>Dooray 연동됨</DialogTitle>
           <DialogDescription>
-            {settings?.selected_project_name || 'Notification-개발'} 프로젝트와 연동되었습니다.
+            {settings?.selected_project_name} 프로젝트와 연동되었습니다.
           </DialogDescription>
         </DialogHeader>
         <DialogContent>
           <div className="space-y-4">
             <div className="p-4 rounded-md bg-green-500/10 border border-green-500/20">
-              <div className="flex items-center gap-2 text-green-600">
-                <Check className="h-5 w-5" />
-                <span className="font-medium">연결됨</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-green-600">
+                  <Check className="h-5 w-5" />
+                  <span className="font-medium">연결됨</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleChangeProject}
+                  className="text-xs"
+                >
+                  프로젝트 변경
+                </Button>
               </div>
               <div className="mt-2 text-sm text-muted-foreground">
-                프로젝트: {settings?.selected_project_name || 'Notification-개발'}
+                프로젝트: {settings?.selected_project_name}
               </div>
             </div>
 
@@ -472,6 +570,7 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
     return (
       <Dialog open={modal.visible} onOpenChange={handleClose}>
         {step === 'token' && renderTokenStep()}
+        {step === 'projects' && renderProjectsStep()}
         {step === 'connected' && renderConnectedStep()}
         {step === 'tags' && renderTagsStep()}
       </Dialog>

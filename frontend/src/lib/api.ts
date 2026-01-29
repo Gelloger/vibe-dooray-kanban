@@ -1409,6 +1409,17 @@ export const doorayApi = {
   },
 
   /**
+   * Update selected project
+   */
+  updateSelectedProject: async (projectId: string, projectName: string): Promise<DooraySettings> => {
+    const response = await makeRequest('/api/dooray/settings/project', {
+      method: 'POST',
+      body: JSON.stringify({ selected_project_id: projectId, selected_project_name: projectName }),
+    });
+    return handleApiResponse<DooraySettings>(response);
+  },
+
+  /**
    * Update selected tag IDs for filtering sync
    */
   updateSelectedTags: async (tagIds: string[] | null): Promise<DooraySettings> => {

@@ -19,13 +19,10 @@ use crate::{DeploymentImpl, error::ApiError};
 
 const DOORAY_API_BASE: &str = "https://api.dooray.com";
 
-// Hardcoded project for now
-const DEFAULT_DOORAY_PROJECT_ID: &str = "1769381697328002548";
-const DEFAULT_DOORAY_PROJECT_NAME: &str = "Notification-개발";
-
 pub fn router() -> Router<DeploymentImpl> {
     Router::new()
         .route("/dooray/settings", get(get_settings).post(save_settings).delete(delete_settings))
+        .route("/dooray/settings/project", post(update_selected_project))
         .route("/dooray/settings/tags", post(update_selected_tags))
         .route("/dooray/projects", get(get_dooray_projects))
         .route("/dooray/projects/{dooray_project_id}/tasks", get(get_dooray_tasks))
@@ -85,11 +82,11 @@ async fn save_settings(
         return Ok(ResponseJson(ApiResponse::error("Invalid Dooray token")));
     }
 
-    // Auto-set the default project
+    // Don't auto-set project - user will select from list
     let data = CreateDooraySettings {
         dooray_token: payload.dooray_token,
-        selected_project_id: Some(DEFAULT_DOORAY_PROJECT_ID.to_string()),
-        selected_project_name: Some(DEFAULT_DOORAY_PROJECT_NAME.to_string()),
+        selected_project_id: payload.selected_project_id,
+        selected_project_name: payload.selected_project_name,
         selected_tag_ids: None,
     };
 
@@ -238,6 +235,12 @@ pub struct UpdateSelectedTagsRequest {
     pub selected_tag_ids: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, TS)]
+pub struct UpdateSelectedProjectRequest {
+    pub selected_project_id: String,
+    pub selected_project_name: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct DoorayTasksApiResponse {
     result: Option<Vec<DoorayTask>>,
@@ -351,6 +354,35 @@ async fn get_dooray_tags(
     let tag_groups: Vec<DoorayTagGroup> = tag_groups_map.into_values().collect();
 
     Ok(ResponseJson(ApiResponse::success(DoorayTagsResponse { tag_groups })))
+}
+
+async fn update_selected_project(
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<UpdateSelectedProjectRequest>,
+) -> Result<ResponseJson<ApiResponse<DooraySettings>>, ApiError> {
+    // Update selected project and clear tag selection (tags are project-specific)
+    let settings = DooraySettings::update_selected_project(
+        &deployment.db().pool,
+        Some(&payload.selected_project_id),
+        Some(&payload.selected_project_name),
+    ).await?;
+
+    // Clear tag selection when project changes
+    if settings.is_some() {
+        DooraySettings::update_selected_tags(&deployment.db().pool, None).await?;
+    }
+
+    match settings {
+        Some(s) => {
+            let masked = DooraySettings {
+                dooray_token: mask_token(&s.dooray_token),
+                selected_tag_ids: None, // Return with cleared tags
+                ..s
+            };
+            Ok(ResponseJson(ApiResponse::success(masked)))
+        }
+        None => Ok(ResponseJson(ApiResponse::error("No Dooray settings found")))
+    }
 }
 
 async fn update_selected_tags(
