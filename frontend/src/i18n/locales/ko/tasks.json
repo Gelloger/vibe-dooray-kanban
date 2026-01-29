@@ -33,7 +33,9 @@
     "viewProcesses": "View processes",
     "viewRelatedTasks": "View related tasks",
     "startReview": "리뷰 시작",
-    "startingReview": "리뷰 시작 중..."
+    "startingReview": "리뷰 시작 중...",
+    "saveToDooray": "두레이에 기록",
+    "savingToDooray": "불러오는 중..."
   },
   "editBranchName": {
     "dialog": {
@@ -444,6 +446,7 @@
     "editTask": "Edit task"
   },
   "navigateToParent": "상위 작업 시도로 이동",
+  "startTask": "작업 시작",
   "taskPanel": {
     "attemptsCount": "Attempts ({{count}})",
     "errorLoadingAttempts": "Failed to load attempts",
@@ -698,6 +701,9 @@
     "statusSuccess": "성공적으로 완료됨",
     "statusFailed": "종료 코드 {{exitCode}}(으)로 실패함",
     "statusKilled": "프로세스가 종료되었습니다"
+  },
+  "dooray": {
+    "saveTooltip": "두레이에 기록"
   },
   "createWorkspaceFromPr": {
     "title": "PR에서 워크스페이스 만들기",

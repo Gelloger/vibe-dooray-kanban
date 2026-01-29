@@ -650,6 +650,9 @@ pub async fn create_workspace_from_pr(
         status: Some(TaskStatus::InProgress),
         parent_workspace_id: None,
         image_ids: None,
+        dooray_task_id: None,
+        dooray_project_id: None,
+        dooray_task_number: None,
     };
     let task = Task::create(pool, &create_task, task_id).await?;
 
@@ -693,6 +696,7 @@ pub async fn create_workspace_from_pr(
         Ok(repo_info) => {
             if let Err(e) = GhCli::new().pr_checkout(
                 &worktree_path,
+                repo_info.host.as_deref(),
                 &repo_info.owner,
                 &repo_info.repo_name,
                 payload.pr_number,

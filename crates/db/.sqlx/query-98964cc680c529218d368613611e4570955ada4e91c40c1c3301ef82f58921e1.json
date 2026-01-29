@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE dooray_settings\n               SET selected_tag_ids = $1,\n                   updated_at = CURRENT_TIMESTAMP\n               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_token",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_project_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_project_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_tag_ids",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "98964cc680c529218d368613611e4570955ada4e91c40c1c3301ef82f58921e1"
+}

@@ -23,8 +23,42 @@ use crate::services::git_host::types::{
 
 #[derive(Debug, Clone)]
 pub struct GitHubRepoInfo {
+    pub host: Option<String>,
     pub owner: String,
     pub repo_name: String,
+}
+
+/// Extract the host from a git remote URL.
+/// Returns None for github.com (default host), Some(host) for GitHub Enterprise.
+fn extract_host_from_url(url: &str) -> Option<String> {
+    let url_lower = url.to_lowercase();
+
+    // For github.com, return None (use default)
+    if url_lower.contains("github.com") {
+        return None;
+    }
+
+    // Try to extract host from various URL formats
+    // HTTPS: https://github.example.com/owner/repo
+    // SSH: git@github.example.com:owner/repo.git
+    if let Some(stripped) = url.strip_prefix("https://") {
+        if let Some(host) = stripped.split('/').next() {
+            return Some(host.to_string());
+        }
+    } else if let Some(stripped) = url.strip_prefix("http://") {
+        if let Some(host) = stripped.split('/').next() {
+            return Some(host.to_string());
+        }
+    } else if url.starts_with("git@") {
+        // git@github.example.com:owner/repo.git
+        if let Some(host_part) = url.strip_prefix("git@") {
+            if let Some(host) = host_part.split(':').next() {
+                return Some(host.to_string());
+            }
+        }
+    }
+
+    None
 }
 
 #[derive(Deserialize)]
@@ -186,15 +220,16 @@ impl GhCli {
             ["repo", "view", remote_url, "--json", "owner,name"],
             Some(repo_path),
         )?;
-        Self::parse_repo_info_response(&raw)
+        Self::parse_repo_info_response(&raw, remote_url)
     }
 
-    fn parse_repo_info_response(raw: &str) -> Result<GitHubRepoInfo, GhCliError> {
+    fn parse_repo_info_response(raw: &str, remote_url: &str) -> Result<GitHubRepoInfo, GhCliError> {
         let resp: GhRepoViewResponse = serde_json::from_str(raw).map_err(|e| {
             GhCliError::UnexpectedOutput(format!("Failed to parse gh repo view response: {e}"))
         })?;
 
         Ok(GitHubRepoInfo {
+            host: extract_host_from_url(remote_url),
             owner: resp.owner.login,
             repo_name: resp.name,
         })
@@ -205,9 +240,12 @@ impl GhCli {
     /// The `repo_path` parameter specifies the working directory for the command.
     /// This is required for compatibility with older `gh` CLI versions (e.g., v2.4.0)
     /// that require running from within a git repository.
+    ///
+    /// The `host` parameter is used for GitHub Enterprise servers. If None, uses github.com.
     pub fn create_pr(
         &self,
         request: &CreatePrRequest,
+        host: Option<&str>,
         owner: &str,
         repo_name: &str,
         repo_path: &Path,
@@ -220,11 +258,17 @@ impl GhCli {
             .write_all(body.as_bytes())
             .map_err(|e| GhCliError::CommandFailed(format!("Failed to write body: {e}")))?;
 
+        // For GitHub Enterprise, include the host in the repo specifier
+        let repo_specifier = match host {
+            Some(h) => format!("{}/{}/{}", h, owner, repo_name),
+            None => format!("{}/{}", owner, repo_name),
+        };
+
         let mut args: Vec<OsString> = Vec::with_capacity(14);
         args.push(OsString::from("pr"));
         args.push(OsString::from("create"));
         args.push(OsString::from("--repo"));
-        args.push(OsString::from(format!("{}/{}", owner, repo_name)));
+        args.push(OsString::from(repo_specifier));
         args.push(OsString::from("--head"));
         args.push(OsString::from(&request.head_branch));
         args.push(OsString::from("--base"));
@@ -260,16 +304,21 @@ impl GhCli {
     /// List pull requests for a branch (includes closed/merged).
     pub fn list_prs_for_branch(
         &self,
+        host: Option<&str>,
         owner: &str,
         repo: &str,
         branch: &str,
     ) -> Result<Vec<PullRequestInfo>, GhCliError> {
+        let repo_specifier = match host {
+            Some(h) => format!("{h}/{owner}/{repo}"),
+            None => format!("{owner}/{repo}"),
+        };
         let raw = self.run(
             [
                 "pr",
                 "list",
                 "--repo",
-                &format!("{owner}/{repo}"),
+                &repo_specifier,
                 "--state",
                 "all",
                 "--head",
@@ -282,13 +331,22 @@ impl GhCli {
         Self::parse_pr_list(&raw)
     }
 
-    pub fn list_open_prs(&self, owner: &str, repo: &str) -> Result<Vec<OpenPrInfo>, GhCliError> {
+    pub fn list_open_prs(
+        &self,
+        host: Option<&str>,
+        owner: &str,
+        repo: &str,
+    ) -> Result<Vec<OpenPrInfo>, GhCliError> {
+        let repo_specifier = match host {
+            Some(h) => format!("{h}/{owner}/{repo}"),
+            None => format!("{owner}/{repo}"),
+        };
         let raw = self.run(
             [
                 "pr",
                 "list",
                 "--repo",
-                &format!("{owner}/{repo}"),
+                &repo_specifier,
                 "--state",
                 "open",
                 "--json",
@@ -302,17 +360,22 @@ impl GhCli {
     /// Fetch comments for a pull request.
     pub fn get_pr_comments(
         &self,
+        host: Option<&str>,
         owner: &str,
         repo: &str,
         pr_number: i64,
     ) -> Result<Vec<PrComment>, GhCliError> {
+        let repo_specifier = match host {
+            Some(h) => format!("{h}/{owner}/{repo}"),
+            None => format!("{owner}/{repo}"),
+        };
         let raw = self.run(
             [
                 "pr",
                 "view",
                 &pr_number.to_string(),
                 "--repo",
-                &format!("{owner}/{repo}"),
+                &repo_specifier,
                 "--json",
                 "comments",
             ],
@@ -324,34 +387,43 @@ impl GhCli {
     /// Fetch inline review comments for a pull request via API.
     pub fn get_pr_review_comments(
         &self,
+        host: Option<&str>,
         owner: &str,
         repo: &str,
         pr_number: i64,
     ) -> Result<Vec<PrReviewComment>, GhCliError> {
-        let raw = self.run(
-            [
-                "api",
-                &format!("repos/{owner}/{repo}/pulls/{pr_number}/comments"),
-            ],
-            None,
-        )?;
+        let mut args = vec![
+            "api".to_string(),
+            format!("repos/{owner}/{repo}/pulls/{pr_number}/comments"),
+        ];
+        // For GitHub Enterprise, specify the hostname
+        if let Some(h) = host {
+            args.push("--hostname".to_string());
+            args.push(h.to_string());
+        }
+        let raw = self.run(args.iter().map(|s| s.as_str()), None)?;
         Self::parse_pr_review_comments(&raw)
     }
 
     pub fn pr_checkout(
         &self,
         repo_path: &Path,
+        host: Option<&str>,
         owner: &str,
         repo: &str,
         pr_number: i64,
     ) -> Result<(), GhCliError> {
+        let repo_specifier = match host {
+            Some(h) => format!("{h}/{owner}/{repo}"),
+            None => format!("{owner}/{repo}"),
+        };
         self.run(
             [
                 "pr",
                 "checkout",
                 &pr_number.to_string(),
                 "--repo",
-                &format!("{owner}/{repo}"),
+                &repo_specifier,
                 "--force",
             ],
             Some(repo_path),

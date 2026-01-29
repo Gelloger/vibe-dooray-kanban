@@ -203,6 +203,7 @@
     "closePanel": "Close panel"
   },
   "navigateToParent": "Navigate to parent task attempt",
+  "startTask": "Start working on this task",
   "toolbar": {
     "actions": "Actions",
     "noAttempts": "No attempts yet",
@@ -500,7 +501,9 @@
     "startReview": "Start Review",
     "startingReview": "Starting Review...",
     "task": "Task",
-    "duplicate": "Duplicate"
+    "duplicate": "Duplicate",
+    "saveToDooray": "Save to Dooray",
+    "savingToDooray": "Loading..."
   },
   "editBranchName": {
     "dialog": {
@@ -698,6 +701,9 @@
     "statusSuccess": "Completed successfully",
     "statusFailed": "Failed with exit code {{exitCode}}",
     "statusKilled": "Process was killed"
+  },
+  "dooray": {
+    "saveTooltip": "Save to Dooray"
   },
   "createWorkspaceFromPr": {
     "title": "Create Workspace from PR",

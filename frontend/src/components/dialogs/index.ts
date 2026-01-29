@@ -106,3 +106,9 @@ export {
   FolderPickerDialog,
   type FolderPickerDialogProps,
 } from './shared/FolderPickerDialog';
+
+// Integration dialogs
+export {
+  DooraySettingsDialog,
+  type DooraySettingsDialogProps,
+} from './DooraySettingsDialog';

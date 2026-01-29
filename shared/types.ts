@@ -40,15 +40,57 @@ export type UpdateTag = { tag_name: string | null, content: string | null, };
 
 export type TaskStatus = "todo" | "inprogress" | "inreview" | "done" | "cancelled";
 
-export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, };
+export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, };
 
-export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, };
+export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, };
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
-export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
+export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, };
 
 export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
+
+export type DooraySettings = { id: string, dooray_token: string, selected_project_id: string | null, selected_project_name: string | null, 
+/**
+ * JSON array of tag IDs to filter when syncing tasks
+ */
+selected_tag_ids: string | null, created_at: Date, updated_at: Date, };
+
+export type CreateDooraySettings = { dooray_token: string, selected_project_id: string | null, selected_project_name: string | null, 
+/**
+ * JSON array of tag IDs to filter when syncing tasks
+ */
+selected_tag_ids: string | null, };
+
+export type UpdateDooraySettings = { dooray_token: string | null, selected_project_id: string | null, selected_project_name: string | null, };
+
+export type DoorayProject = { id: string, code: string, name: string, description: string | null, };
+
+export type DoorayTask = { id: string, number: bigint, subject: string, workflowClass: string | null, body: DoorayTaskBody | null, };
+
+export type DoorayTaskBody = { mimeType: string | null, content: string | null, };
+
+export type DoorayTag = { id: string, name: string, };
+
+export type DoorayTagGroup = { id: string, name: string | null, mandatory: boolean, selectOne: boolean, tags: Array<DoorayTag>, };
+
+export type DoorayTagsResponse = { tagGroups: Array<DoorayTagGroup>, };
+
+export type UpdateSelectedTagsRequest = { selected_tag_ids: Array<string> | null, };
+
+export type SaveSettingsRequest = { dooray_token: string, selected_project_id: string | null, selected_project_name: string | null, };
+
+export type SyncRequest = { project_id: string, dooray_project_id: string, dooray_project_code: string, };
+
+export type SyncResult = { created: number, updated: number, skipped: number, };
+
+export type ImportByNumberRequest = { project_id: string, dooray_project_id: string, dooray_project_code: string, task_number: bigint, };
+
+export type ImportResult = { success: boolean, task_id: string | null, message: string, };
+
+export type CreateDoorayCommentRequest = { dooray_task_id: string, dooray_project_id: string, content: string, };
+
+export type CreateDoorayCommentResult = { success: boolean, message: string, };
 
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 

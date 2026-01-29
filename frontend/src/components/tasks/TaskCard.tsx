@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
-import { Link, Loader2, XCircle } from 'lucide-react';
+import { Link, Loader2, XCircle, Play } from 'lucide-react';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import { ActionsDropdown } from '@/components/ui/actions-dropdown';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { paths } from '@/lib/paths';
 import { attemptsApi } from '@/lib/api';
 import { TaskCardHeader } from './TaskCardHeader';
 import { useTranslation } from 'react-i18next';
+import { CreateAttemptDialog } from '@/components/dialogs';
 
 type Task = TaskWithAttemptStatus;
 
@@ -108,10 +109,30 @@ export function TaskCard({
                   <Link className="h-4 w-4" />
                 </Button>
               )}
+              {task.dooray_task_id && !task.has_in_progress_attempt && (
+                <Button
+                  variant="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    CreateAttemptDialog.show({ taskId: task.id });
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title={t('startTask')}
+                  className="text-green-600 hover:text-green-700"
+                >
+                  <Play className="h-4 w-4" />
+                </Button>
+              )}
               <ActionsDropdown task={task} />
             </>
           }
         />
+        {task.dooray_task_number && (
+          <span className="inline-block px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-mono">
+            {task.dooray_task_number}
+          </span>
+        )}
         {task.description && (
           <p className="text-sm text-secondary-foreground break-words">
             {task.description.length > 130

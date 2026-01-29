@@ -10,6 +10,7 @@ import type { RepoBranchStatus, Workspace } from 'shared/types';
 import { openTaskForm } from '@/lib/openTaskForm';
 import { FeatureShowcaseDialog } from '@/components/dialogs/global/FeatureShowcaseDialog';
 import { BetaWorkspacesDialog } from '@/components/dialogs/global/BetaWorkspacesDialog';
+import { CreateAttemptDialog } from '@/components/dialogs';
 import { showcases } from '@/config/showcases';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { useWorkspaceCount } from '@/hooks/useWorkspaceCount';
@@ -709,11 +710,17 @@ export function ProjectTasks() {
           parent_workspace_id: task.parent_workspace_id,
           image_ids: null,
         });
+
+        // When a Dooray-synced task is moved to "In Progress", open CreateAttemptDialog
+        // to start Claude working on the task with feature/develop/{dooray_task_number} branch
+        if (newStatus === 'inprogress' && task.dooray_task_id) {
+          CreateAttemptDialog.show({ taskId: task.id });
+        }
       } catch (err) {
         console.error('Failed to update task status:', err);
       }
     },
-    [tasksById]
+    [tasksById, handleViewTaskDetails]
   );
 
   const isInitialTasksLoad = isLoading && tasks.length === 0;

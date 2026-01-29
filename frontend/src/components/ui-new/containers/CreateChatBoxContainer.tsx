@@ -185,6 +185,9 @@ export function CreateChatBoxContainer() {
         status: null,
         parent_workspace_id: null,
         image_ids: getImageIds(),
+        dooray_task_id: null,
+        dooray_project_id: null,
+        dooray_task_number: null,
       },
       executor_profile_id: effectiveProfile,
       repos: repos.map((r) => ({

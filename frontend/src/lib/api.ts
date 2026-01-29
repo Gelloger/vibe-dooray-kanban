@@ -92,6 +92,17 @@ import {
   CreateWorkspaceFromPrBody,
   CreateWorkspaceFromPrResponse,
   CreateFromPrError,
+  DooraySettings,
+  DoorayProject,
+  DoorayTask,
+  DoorayTagsResponse,
+  SaveSettingsRequest,
+  SyncRequest,
+  CreateDoorayCommentRequest,
+  CreateDoorayCommentResult,
+  SyncResult,
+  ImportByNumberRequest,
+  ImportResult,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -1355,5 +1366,114 @@ export const queueApi = {
   getStatus: async (sessionId: string): Promise<QueueStatus> => {
     const response = await makeRequest(`/api/sessions/${sessionId}/queue`);
     return handleApiResponse<QueueStatus>(response);
+  },
+};
+
+// Dooray Integration API
+export const doorayApi = {
+  /**
+   * Get current Dooray settings (token is masked)
+   */
+  getSettings: async (): Promise<DooraySettings | null> => {
+    const response = await makeRequest('/api/dooray/settings');
+    return handleApiResponse<DooraySettings | null>(response);
+  },
+
+  /**
+   * Save Dooray settings (token and selected project)
+   */
+  saveSettings: async (data: SaveSettingsRequest): Promise<DooraySettings> => {
+    const response = await makeRequest('/api/dooray/settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<DooraySettings>(response);
+  },
+
+  /**
+   * Remove Dooray integration
+   */
+  deleteSettings: async (): Promise<string> => {
+    const response = await makeRequest('/api/dooray/settings', {
+      method: 'DELETE',
+    });
+    return handleApiResponse<string>(response);
+  },
+
+  /**
+   * Update selected tag IDs for filtering sync
+   */
+  updateSelectedTags: async (tagIds: string[] | null): Promise<DooraySettings> => {
+    const response = await makeRequest('/api/dooray/settings/tags', {
+      method: 'POST',
+      body: JSON.stringify({ selected_tag_ids: tagIds }),
+    });
+    return handleApiResponse<DooraySettings>(response);
+  },
+
+  /**
+   * Get list of Dooray projects
+   */
+  getProjects: async (): Promise<DoorayProject[]> => {
+    const response = await makeRequest('/api/dooray/projects');
+    return handleApiResponse<DoorayProject[]>(response);
+  },
+
+  /**
+   * Get tags from a Dooray project
+   */
+  getTags: async (doorayProjectId: string): Promise<DoorayTagsResponse> => {
+    const response = await makeRequest(
+      `/api/dooray/projects/${doorayProjectId}/tags`
+    );
+    return handleApiResponse<DoorayTagsResponse>(response);
+  },
+
+  /**
+   * Get tasks from a Dooray project
+   */
+  getTasks: async (doorayProjectId: string): Promise<DoorayTask[]> => {
+    const response = await makeRequest(
+      `/api/dooray/projects/${doorayProjectId}/tasks`
+    );
+    return handleApiResponse<DoorayTask[]>(response);
+  },
+
+  /**
+   * Sync tasks from Dooray to local project
+   */
+  sync: async (data: SyncRequest): Promise<SyncResult> => {
+    const response = await makeRequest('/api/dooray/sync', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<SyncResult>(response);
+  },
+
+  /**
+   * Import a single Dooray task by its task number
+   */
+  importByNumber: async (data: ImportByNumberRequest): Promise<ImportResult> => {
+    // Convert BigInt to Number for JSON serialization (BigInt cannot be serialized)
+    const payload = {
+      ...data,
+      task_number: Number(data.task_number),
+    };
+    const response = await makeRequest('/api/dooray/import-by-number', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return handleApiResponse<ImportResult>(response);
+  },
+
+  /**
+   * Create a comment on a Dooray task
+   */
+  createComment: async (data: CreateDoorayCommentRequest): Promise<CreateDoorayCommentResult> => {
+    const response = await makeRequest('/api/dooray/comment', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<CreateDoorayCommentResult>(response);
   },
 };

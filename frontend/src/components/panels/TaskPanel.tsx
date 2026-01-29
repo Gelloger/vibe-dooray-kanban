@@ -77,6 +77,7 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
 
   const titleContent = `# ${task.title || 'Task'}`;
   const descriptionContent = task.description || '';
+  const doorayTaskNumber = task.dooray_task_number;
 
   const attemptColumns: ColumnDef<WorkspaceWithSession>[] = [
     {
@@ -105,6 +106,13 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
         <div className="p-6 flex flex-col h-full max-h-[calc(100vh-8rem)]">
           <div className="space-y-3 overflow-y-auto flex-shrink min-h-0">
             <WYSIWYGEditor value={titleContent} disabled />
+            {doorayTaskNumber && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-mono">
+                  {doorayTaskNumber}
+                </span>
+              </div>
+            )}
             {descriptionContent && (
               <WYSIWYGEditor value={descriptionContent} disabled />
             )}

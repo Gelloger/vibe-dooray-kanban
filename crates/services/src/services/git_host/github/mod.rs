@@ -48,27 +48,31 @@ impl GitHubProvider {
     async fn fetch_general_comments(
         &self,
         cli: &GhCli,
+        host: Option<&str>,
         owner: &str,
         repo: &str,
         pr_number: i64,
     ) -> Result<Vec<super::types::PrComment>, GitHostError> {
         let cli = cli.clone();
+        let host = host.map(|s| s.to_string());
         let owner = owner.to_string();
         let repo = repo.to_string();
 
         (|| async {
             let cli = cli.clone();
+            let host = host.clone();
             let owner = owner.clone();
             let repo = repo.clone();
 
-            let comments =
-                task::spawn_blocking(move || cli.get_pr_comments(&owner, &repo, pr_number))
-                    .await
-                    .map_err(|err| {
-                        GitHostError::PullRequest(format!(
-                            "Failed to execute GitHub CLI for fetching PR comments: {err}"
-                        ))
-                    })?;
+            let comments = task::spawn_blocking(move || {
+                cli.get_pr_comments(host.as_deref(), &owner, &repo, pr_number)
+            })
+            .await
+            .map_err(|err| {
+                GitHostError::PullRequest(format!(
+                    "Failed to execute GitHub CLI for fetching PR comments: {err}"
+                ))
+            })?;
             comments.map_err(GitHostError::from)
         })
         .retry(
@@ -92,27 +96,31 @@ impl GitHubProvider {
     async fn fetch_review_comments(
         &self,
         cli: &GhCli,
+        host: Option<&str>,
         owner: &str,
         repo: &str,
         pr_number: i64,
     ) -> Result<Vec<super::types::PrReviewComment>, GitHostError> {
         let cli = cli.clone();
+        let host = host.map(|s| s.to_string());
         let owner = owner.to_string();
         let repo = repo.to_string();
 
         (|| async {
             let cli = cli.clone();
+            let host = host.clone();
             let owner = owner.clone();
             let repo = repo.clone();
 
-            let comments =
-                task::spawn_blocking(move || cli.get_pr_review_comments(&owner, &repo, pr_number))
-                    .await
-                    .map_err(|err| {
-                        GitHostError::PullRequest(format!(
-                            "Failed to execute GitHub CLI for fetching review comments: {err}"
-                        ))
-                    })?;
+            let comments = task::spawn_blocking(move || {
+                cli.get_pr_review_comments(host.as_deref(), &owner, &repo, pr_number)
+            })
+            .await
+            .map_err(|err| {
+                GitHostError::PullRequest(format!(
+                    "Failed to execute GitHub CLI for fetching review comments: {err}"
+                ))
+            })?;
             comments.map_err(GitHostError::from)
         })
         .retry(
@@ -185,12 +193,13 @@ impl GitHostProvider for GitHubProvider {
         (|| async {
             let cli = self.gh_cli.clone();
             let request = request_clone.clone();
+            let host = target_repo_info.host.clone();
             let owner = target_repo_info.owner.clone();
             let repo_name = target_repo_info.repo_name.clone();
             let repo_path = repo_path.to_path_buf();
 
             let cli_result = task::spawn_blocking(move || {
-                cli.create_pr(&request, &owner, &repo_name, &repo_path)
+                cli.create_pr(&request, host.as_deref(), &owner, &repo_name, &repo_path)
             })
             .await
             .map_err(|err| {
@@ -272,18 +281,20 @@ impl GitHostProvider for GitHubProvider {
 
         (|| async {
             let cli = cli.clone();
+            let host = repo_info.host.clone();
             let owner = repo_info.owner.clone();
             let repo_name = repo_info.repo_name.clone();
             let branch = branch.clone();
 
-            let prs =
-                task::spawn_blocking(move || cli.list_prs_for_branch(&owner, &repo_name, &branch))
-                    .await
-                    .map_err(|err| {
-                        GitHostError::PullRequest(format!(
-                            "Failed to execute GitHub CLI for listing PRs: {err}"
-                        ))
-                    })?;
+            let prs = task::spawn_blocking(move || {
+                cli.list_prs_for_branch(host.as_deref(), &owner, &repo_name, &branch)
+            })
+            .await
+            .map_err(|err| {
+                GitHostError::PullRequest(format!(
+                    "Failed to execute GitHub CLI for listing PRs: {err}"
+                ))
+            })?;
             prs.map_err(GitHostError::from)
         })
         .retry(
@@ -317,8 +328,20 @@ impl GitHostProvider for GitHubProvider {
         let cli2 = self.gh_cli.clone();
 
         let (general_result, review_result) = tokio::join!(
-            self.fetch_general_comments(&cli1, &repo_info.owner, &repo_info.repo_name, pr_number),
-            self.fetch_review_comments(&cli2, &repo_info.owner, &repo_info.repo_name, pr_number)
+            self.fetch_general_comments(
+                &cli1,
+                repo_info.host.as_deref(),
+                &repo_info.owner,
+                &repo_info.repo_name,
+                pr_number
+            ),
+            self.fetch_review_comments(
+                &cli2,
+                repo_info.host.as_deref(),
+                &repo_info.owner,
+                &repo_info.repo_name,
+                pr_number
+            )
         );
 
         let general_comments = general_result?;
@@ -370,16 +393,19 @@ impl GitHostProvider for GitHubProvider {
 
         (|| async {
             let cli = cli.clone();
+            let host = repo_info.host.clone();
             let owner = repo_info.owner.clone();
             let repo_name = repo_info.repo_name.clone();
 
-            let prs = task::spawn_blocking(move || cli.list_open_prs(&owner, &repo_name))
-                .await
-                .map_err(|err| {
-                    GitHostError::PullRequest(format!(
-                        "Failed to execute GitHub CLI for listing open PRs: {err}"
-                    ))
-                })?;
+            let prs = task::spawn_blocking(move || {
+                cli.list_open_prs(host.as_deref(), &owner, &repo_name)
+            })
+            .await
+            .map_err(|err| {
+                GitHostError::PullRequest(format!(
+                    "Failed to execute GitHub CLI for listing open PRs: {err}"
+                ))
+            })?;
             prs.map_err(GitHostError::from)
         })
         .retry(

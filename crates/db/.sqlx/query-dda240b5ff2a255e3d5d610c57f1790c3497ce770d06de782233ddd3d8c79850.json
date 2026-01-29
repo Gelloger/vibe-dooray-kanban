@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO dooray_settings (id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids)\n               VALUES ($1, $2, $3, $4, $5)\n               ON CONFLICT(id) DO UPDATE SET\n                   dooray_token = excluded.dooray_token,\n                   selected_project_id = excluded.selected_project_id,\n                   selected_project_name = excluded.selected_project_name,\n                   selected_tag_ids = excluded.selected_tag_ids,\n                   updated_at = CURRENT_TIMESTAMP\n               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_token",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_project_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_project_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_tag_ids",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "dda240b5ff2a255e3d5d610c57f1790c3497ce770d06de782233ddd3d8c79850"
+}

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,8 +18,10 @@ import { ViewRelatedTasksDialog } from '@/components/dialogs/tasks/ViewRelatedTa
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import { GitActionsDialog } from '@/components/dialogs/tasks/GitActionsDialog';
 import { EditBranchNameDialog } from '@/components/dialogs/tasks/EditBranchNameDialog';
+import { SaveToDoorayDialog } from '@/components/ui-new/dialogs/SaveToDoorayDialog';
 import { useProject } from '@/contexts/ProjectContext';
 import { openTaskForm } from '@/lib/openTaskForm';
+import { fetchSessionConversationSummary } from '@/utils/conversationUtils';
 
 import { useNavigate } from 'react-router-dom';
 import { WorkspaceWithSession } from '@/types/attempt';
@@ -33,9 +36,11 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
   const { projectId } = useProject();
   const openInEditor = useOpenInEditor(attempt?.id);
   const navigate = useNavigate();
+  const [isSavingToDooray, setIsSavingToDooray] = useState(false);
 
   const hasAttemptActions = Boolean(attempt);
   const hasTaskActions = Boolean(task);
+  const hasDoorayIntegration = Boolean(task?.dooray_task_id && task?.dooray_project_id);
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -128,6 +133,27 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
+  const handleSaveToDooray = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task?.dooray_task_id || !task?.dooray_project_id || !attempt?.session?.id) return;
+
+    setIsSavingToDooray(true);
+    try {
+      const { summaryContent } = await fetchSessionConversationSummary(attempt.session.id);
+
+      await SaveToDoorayDialog.show({
+        doorayTaskId: task.dooray_task_id,
+        doorayProjectId: task.dooray_project_id,
+        doorayTaskNumber: task.dooray_task_number || '',
+        summaryContent,
+      });
+    } catch (error) {
+      console.error('Error saving to Dooray:', error);
+    } finally {
+      setIsSavingToDooray(false);
+    }
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -185,6 +211,14 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
               >
                 {t('actionsMenu.editBranchName')}
               </DropdownMenuItem>
+              {hasDoorayIntegration && (
+                <DropdownMenuItem
+                  disabled={!attempt?.session?.id || isSavingToDooray}
+                  onClick={handleSaveToDooray}
+                >
+                  {isSavingToDooray ? t('actionsMenu.savingToDooray') : t('actionsMenu.saveToDooray')}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
             </>
           )}

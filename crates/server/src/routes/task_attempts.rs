@@ -202,10 +202,18 @@ pub async fn create_task_attempt(
     };
 
     let attempt_id = Uuid::new_v4();
-    let git_branch_name = deployment
-        .container()
-        .git_branch_from_workspace(&attempt_id, &task.title)
-        .await;
+
+    // Use Dooray task number for branch name if available
+    let git_branch_name = if let Some(ref dooray_number) = task.dooray_task_number {
+        // Extract just the number part (e.g., "Notification-개발/123" -> "123")
+        let number = dooray_number.split('/').last().unwrap_or(dooray_number);
+        format!("feature/develop/{}", number)
+    } else {
+        deployment
+            .container()
+            .git_branch_from_workspace(&attempt_id, &task.title)
+            .await
+    };
 
     let workspace = Workspace::create(
         pool,
