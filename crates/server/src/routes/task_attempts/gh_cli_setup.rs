@@ -31,8 +31,9 @@ pub enum GhCliSetupError {
 pub async fn run_gh_cli_setup(
     deployment: &crate::DeploymentImpl,
     workspace: &Workspace,
+    hostname: Option<&str>,
 ) -> Result<ExecutionProcess, ApiError> {
-    let executor_action = get_gh_cli_setup_helper_action().await?;
+    let executor_action = get_gh_cli_setup_helper_action(hostname).await?;
 
     deployment
         .container()
@@ -68,7 +69,9 @@ pub async fn run_gh_cli_setup(
     Ok(execution_process)
 }
 
-async fn get_gh_cli_setup_helper_action() -> Result<ExecutorAction, ApiError> {
+async fn get_gh_cli_setup_helper_action(
+    hostname: Option<&str>,
+) -> Result<ExecutorAction, ApiError> {
     #[cfg(unix)]
     {
         use utils::shell::resolve_executable_path;
@@ -98,13 +101,23 @@ fi"#
             working_dir: None,
         };
 
-        // Auth script
-        let auth_script = r#"#!/bin/bash
+        // Auth script - include --hostname for GitHub Enterprise
+        let auth_command = match hostname {
+            Some(h) => format!(
+                "gh auth login --hostname {} --web --git-protocol https --skip-ssh-key",
+                h
+            ),
+            None => "gh auth login --web --git-protocol https --skip-ssh-key".to_string(),
+        };
+
+        let auth_script = format!(
+            r#"#!/bin/bash
 set -e
 export GH_PROMPT_DISABLED=1
-gh auth login --web --git-protocol https --skip-ssh-key
-"#
-        .to_string();
+{}
+"#,
+            auth_command
+        );
 
         let auth_request = ScriptRequest {
             script: auth_script,

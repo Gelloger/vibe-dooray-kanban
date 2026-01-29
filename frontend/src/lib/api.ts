@@ -682,9 +682,17 @@ export const attemptsApi = {
     return handleApiResponse<ExecutionProcess[]>(response);
   },
 
-  setupGhCli: async (attemptId: string): Promise<ExecutionProcess> => {
+  setupGhCli: async (
+    attemptId: string,
+    hostname?: string
+  ): Promise<ExecutionProcess> => {
+    const params = new URLSearchParams();
+    if (hostname) {
+      params.set('hostname', hostname);
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
     const response = await makeRequest(
-      `/api/task-attempts/${attemptId}/gh-cli-setup`,
+      `/api/task-attempts/${attemptId}/gh-cli-setup${query}`,
       {
         method: 'POST',
       }

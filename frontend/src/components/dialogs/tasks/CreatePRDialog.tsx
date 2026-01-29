@@ -117,7 +117,8 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
 
       const handleGhCliSetupOutcome = (
         setupResult: GhCliSetupError | null,
-        fallbackMessage: string
+        fallbackMessage: string,
+        hostname?: string
       ) => {
         if (setupResult === null) {
           setError(null);
@@ -127,7 +128,7 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
           return;
         }
 
-        const ui = mapGhCliErrorToUi(setupResult, fallbackMessage, t);
+        const ui = mapGhCliErrorToUi(setupResult, fallbackMessage, t, hostname);
 
         if (ui.variant) {
           setGhCliHelp(ui);
@@ -167,12 +168,17 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
       const defaultGhCliErrorMessage =
         result.message || 'Failed to run GitHub CLI setup.';
 
-      const showGhCliSetupDialog = async () => {
+      const showGhCliSetupDialog = async (hostname?: string | null) => {
         const setupResult = await GhCliSetupDialog.show({
           attemptId: attempt.id,
+          hostname: hostname ?? undefined,
         });
 
-        handleGhCliSetupOutcome(setupResult, defaultGhCliErrorMessage);
+        handleGhCliSetupOutcome(
+          setupResult,
+          defaultGhCliErrorMessage,
+          hostname ?? undefined
+        );
       };
 
       if (result.error) {
@@ -182,11 +188,13 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
         ) {
           // Only show setup dialog for GitHub CLI on Mac
           if (result.error.provider === 'git_hub' && isMacEnvironment) {
-            await showGhCliSetupDialog();
+            await showGhCliSetupDialog(result.error.hostname);
           } else {
             const providerName =
               result.error.provider === 'git_hub'
-                ? 'GitHub'
+                ? result.error.hostname
+                  ? `GitHub Enterprise (${result.error.hostname})`
+                  : 'GitHub'
                 : result.error.provider === 'azure_dev_ops'
                   ? 'Azure DevOps'
                   : 'Git host';
@@ -364,6 +372,7 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
                       <GhCliHelpInstructions
                         variant={ghCliHelp.variant}
                         t={t}
+                        hostname={ghCliHelp.hostname}
                       />
                     </AlertDescription>
                   </Alert>

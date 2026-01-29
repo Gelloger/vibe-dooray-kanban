@@ -1545,12 +1545,19 @@ pub async fn run_cleanup_script(
     Ok(ResponseJson(ApiResponse::success(execution_process)))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GhCliSetupQuery {
+    /// GHE hostname (e.g., "github.nhnent.com"), None for github.com
+    pub hostname: Option<String>,
+}
+
 #[axum::debug_handler]
 pub async fn gh_cli_setup_handler(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
+    Query(query): Query<GhCliSetupQuery>,
 ) -> Result<ResponseJson<ApiResponse<ExecutionProcess, GhCliSetupError>>, ApiError> {
-    match gh_cli_setup::run_gh_cli_setup(&deployment, &workspace).await {
+    match gh_cli_setup::run_gh_cli_setup(&deployment, &workspace, query.hostname.as_deref()).await {
         Ok(execution_process) => {
             deployment
                 .track_if_analytics_allowed(

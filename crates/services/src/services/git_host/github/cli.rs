@@ -30,7 +30,7 @@ pub struct GitHubRepoInfo {
 
 /// Extract the host from a git remote URL.
 /// Returns None for github.com (default host), Some(host) for GitHub Enterprise.
-fn extract_host_from_url(url: &str) -> Option<String> {
+pub fn extract_host_from_url(url: &str) -> Option<String> {
     let url_lower = url.to_lowercase();
 
     // For github.com, return None (use default)
