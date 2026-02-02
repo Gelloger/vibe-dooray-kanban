@@ -486,6 +486,8 @@ pub struct CreateDoorayTaskRequest {
     pub body: Option<String>,
     pub local_project_id: Uuid,
     pub tag_ids: Option<Vec<String>>,
+    /// Parent task ID for creating subtasks
+    pub parent_task_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -802,6 +804,11 @@ async fn create_dooray_task(
         if !tag_ids.is_empty() {
             request_body["tagIds"] = serde_json::json!(tag_ids);
         }
+    }
+
+    // Add parent task ID if provided (for creating subtasks)
+    if let Some(ref parent_id) = payload.parent_task_id {
+        request_body["parentPostId"] = serde_json::json!(parent_id);
     }
 
     let response = client

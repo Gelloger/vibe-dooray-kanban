@@ -60,7 +60,7 @@ async function fetchExecutionProcessesForSession(sessionId: string): Promise<Exe
     };
 
     let resolved = false;
-    let state: ExecutionProcessState = { execution_processes: {} };
+    const state: ExecutionProcessState = { execution_processes: {} };
 
     const ws = new WebSocket(wsUrl);
 

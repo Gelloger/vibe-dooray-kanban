@@ -145,6 +145,7 @@ const TaskDesignPanel = ({ task }: TaskDesignPanelProps) => {
     await CreateDoorayTaskDialog.show({
       localProjectId: projectId,
       sessionId: sessionData?.session?.id,
+      taskId: task.id,
       initialTitle: task.title,
       initialBody: task.description
         ? `${task.description}\n\n---\n\n## Design Discussion\n\n${designContext || ''}`
