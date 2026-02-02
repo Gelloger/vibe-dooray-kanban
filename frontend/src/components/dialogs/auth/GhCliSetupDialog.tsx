@@ -17,6 +17,8 @@ import { useTranslation } from 'react-i18next';
 
 interface GhCliSetupDialogProps {
   attemptId: string;
+  /** GHE hostname (e.g., "github.nhnent.com"), undefined for github.com */
+  hostname?: string;
 }
 
 export type GhCliSupportVariant = 'homebrew' | 'manual';
@@ -24,21 +26,25 @@ export type GhCliSupportVariant = 'homebrew' | 'manual';
 export interface GhCliSupportContent {
   message: string;
   variant: GhCliSupportVariant | null;
+  /** GHE hostname (e.g., "github.nhnent.com"), undefined for github.com */
+  hostname?: string;
 }
 
 export const mapGhCliErrorToUi = (
   error: GhCliSetupError | null,
   fallbackMessage: string,
-  t: (key: string) => string
+  t: (key: string) => string,
+  hostname?: string
 ): GhCliSupportContent => {
   if (!error) {
-    return { message: fallbackMessage, variant: null };
+    return { message: fallbackMessage, variant: null, hostname };
   }
 
   if (error === 'BREW_MISSING') {
     return {
       message: t('settings:integrations.github.cliSetup.errors.brewMissing'),
       variant: 'homebrew',
+      hostname,
     };
   }
 
@@ -46,6 +52,7 @@ export const mapGhCliErrorToUi = (
     return {
       message: t('settings:integrations.github.cliSetup.errors.notSupported'),
       variant: 'manual',
+      hostname,
     };
   }
 
@@ -53,19 +60,28 @@ export const mapGhCliErrorToUi = (
     return {
       message: error.OTHER.message || fallbackMessage,
       variant: null,
+      hostname,
     };
   }
 
-  return { message: fallbackMessage, variant: null };
+  return { message: fallbackMessage, variant: null, hostname };
 };
 
 export const GhCliHelpInstructions = ({
   variant,
   t,
+  hostname,
 }: {
   variant: GhCliSupportVariant;
   t: (key: string) => string;
+  /** GHE hostname (e.g., "github.nhnent.com"), undefined for github.com */
+  hostname?: string;
 }) => {
+  // Build the auth command with optional hostname for GHE
+  const authCommand = hostname
+    ? `gh auth login --hostname ${hostname} --web --git-protocol https`
+    : 'gh auth login --web --git-protocol https';
+
   if (variant === 'homebrew') {
     return (
       <div className="space-y-2 text-sm">
@@ -92,9 +108,14 @@ export const GhCliHelpInstructions = ({
           )}
           <br />
           <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            gh auth login --web --git-protocol https
+            {authCommand}
           </code>
         </p>
+        {hostname && (
+          <p className="text-muted-foreground">
+            Note: This repository uses GitHub Enterprise ({hostname})
+          </p>
+        )}
       </div>
     );
   }
@@ -114,14 +135,19 @@ export const GhCliHelpInstructions = ({
         {t('settings:integrations.github.cliSetup.help.manual.andAuthenticate')}
       </p>
       <pre className="rounded bg-muted px-2 py-1 text-xs">
-        gh auth login --web --git-protocol https
+        {authCommand}
       </pre>
+      {hostname && (
+        <p className="text-muted-foreground">
+          Note: This repository uses GitHub Enterprise ({hostname})
+        </p>
+      )}
     </div>
   );
 };
 
 const GhCliSetupDialogImpl = NiceModal.create<GhCliSetupDialogProps>(
-  ({ attemptId }) => {
+  ({ attemptId, hostname }) => {
     const modal = useModal();
     const { t } = useTranslation();
     const [isRunning, setIsRunning] = useState(false);
@@ -139,7 +165,7 @@ const GhCliSetupDialogImpl = NiceModal.create<GhCliSetupDialogProps>(
       pendingResultRef.current = null;
 
       try {
-        await attemptsApi.setupGhCli(attemptId);
+        await attemptsApi.setupGhCli(attemptId, hostname);
         hasResolvedRef.current = true;
         modal.resolve(null);
         modal.hide();
@@ -229,7 +255,11 @@ const GhCliSetupDialogImpl = NiceModal.create<GhCliSetupDialogProps>(
                 <AlertDescription className="space-y-2">
                   <p>{errorInfo.message}</p>
                   {errorInfo.variant && (
-                    <GhCliHelpInstructions variant={errorInfo.variant} t={t} />
+                    <GhCliHelpInstructions
+                      variant={errorInfo.variant}
+                      t={t}
+                      hostname={hostname}
+                    />
                   )}
                 </AlertDescription>
               </Alert>

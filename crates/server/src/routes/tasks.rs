@@ -9,12 +9,15 @@ use axum::{
     },
     http::StatusCode,
     middleware::from_fn_with_state,
-    response::{IntoResponse, Json as ResponseJson},
+    response::{IntoResponse, Json as ResponseJson, Sse, sse::Event},
     routing::{delete, get, post, put},
 };
+use std::convert::Infallible;
 use db::models::{
+    design_message::{CreateDesignMessage, DesignMessage, DesignMessageRole},
     image::TaskImage,
     repo::{Repo, RepoError},
+    session::{CreateSession, Session},
     task::{CreateTask, Task, TaskWithAttemptStatus, UpdateTask},
     workspace::{CreateWorkspace, Workspace},
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
@@ -176,10 +179,18 @@ pub async fn create_task_and_start(
         .await;
 
     let attempt_id = Uuid::new_v4();
-    let git_branch_name = deployment
-        .container()
-        .git_branch_from_workspace(&attempt_id, &task.title)
-        .await;
+
+    // Use Dooray task number for branch name if available
+    let git_branch_name = if let Some(ref dooray_number) = task.dooray_task_number {
+        // Extract just the number part (e.g., "Notification-개발/123" -> "123")
+        let number = dooray_number.split('/').last().unwrap_or(dooray_number);
+        format!("feature/develop/{}", number)
+    } else {
+        deployment
+            .container()
+            .git_branch_from_workspace(&attempt_id, &task.title)
+            .await
+    };
 
     // Compute agent_working_dir based on repo count:
     // - Single repo: join repo name with default_working_dir (if set), or just repo name
@@ -395,10 +406,631 @@ pub async fn delete_task(
     Ok((StatusCode::ACCEPTED, ResponseJson(ApiResponse::success(()))))
 }
 
+/// Get or create a design session for a task.
+/// Design sessions allow users to chat with Claude for planning before creating workspaces.
+pub async fn get_or_create_design_session(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<Session>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // If task already has a design session, return it
+    if let Some(design_session_id) = task.design_session_id {
+        if let Some(session) = Session::find_by_id(pool, design_session_id).await? {
+            return Ok(ResponseJson(ApiResponse::success(session)));
+        }
+        // Session was deleted but task still references it - create new one
+    }
+
+    // Create a new design session (without workspace)
+    let session_id = Uuid::new_v4();
+    let session = Session::create_design_session(
+        pool,
+        &CreateSession { executor: None },
+        session_id,
+    )
+    .await?;
+
+    // Link the session to the task
+    Task::update_design_session_id(pool, task.id, Some(session.id)).await?;
+
+    tracing::info!(
+        "Created design session {} for task {}",
+        session.id,
+        task.id
+    );
+
+    Ok(ResponseJson(ApiResponse::success(session)))
+}
+
+/// Get all messages in a design session
+pub async fn get_design_messages(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<Vec<DesignMessage>>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Get design session ID
+    let design_session_id = task.design_session_id.ok_or(ApiError::BadRequest(
+        "Design session not found for this task".to_string(),
+    ))?;
+
+    let messages = DesignMessage::find_by_session_id(pool, design_session_id).await?;
+
+    Ok(ResponseJson(ApiResponse::success(messages)))
+}
+
+#[derive(Debug, Deserialize, TS)]
+pub struct AddDesignMessageRequest {
+    pub content: String,
+    pub role: DesignMessageRole,
+}
+
+/// Add a message to a design session
+pub async fn add_design_message(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<AddDesignMessageRequest>,
+) -> Result<ResponseJson<ApiResponse<DesignMessage>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Get or create design session
+    let design_session_id = if let Some(id) = task.design_session_id {
+        id
+    } else {
+        // Create design session if not exists
+        let session_id = Uuid::new_v4();
+        let session = Session::create_design_session(
+            pool,
+            &CreateSession { executor: None },
+            session_id,
+        )
+        .await?;
+
+        Task::update_design_session_id(pool, task.id, Some(session.id)).await?;
+        session.id
+    };
+
+    let message = DesignMessage::create(
+        pool,
+        design_session_id,
+        &CreateDesignMessage {
+            role: payload.role,
+            content: payload.content,
+        },
+    )
+    .await?;
+
+    Ok(ResponseJson(ApiResponse::success(message)))
+}
+
+/// Design session response with messages
+#[derive(Debug, Serialize, TS)]
+pub struct DesignSessionWithMessages {
+    pub session: Session,
+    pub messages: Vec<DesignMessage>,
+}
+
+/// Request for AI chat in design session
+#[derive(Debug, Deserialize, TS)]
+pub struct DesignChatRequest {
+    pub message: String,
+}
+
+/// Response from AI chat in design session
+#[derive(Debug, Serialize, TS)]
+pub struct DesignChatResponse {
+    pub user_message: DesignMessage,
+    pub assistant_message: DesignMessage,
+}
+
+/// Send a message to the design chat and get AI response
+pub async fn design_chat(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<DesignChatRequest>,
+) -> Result<ResponseJson<ApiResponse<DesignChatResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Get or create design session
+    let design_session_id = if let Some(id) = task.design_session_id {
+        id
+    } else {
+        let session_id = Uuid::new_v4();
+        let session = Session::create_design_session(
+            pool,
+            &CreateSession { executor: None },
+            session_id,
+        )
+        .await?;
+        Task::update_design_session_id(pool, task.id, Some(session.id)).await?;
+        session.id
+    };
+
+    // Save user message
+    let user_message = DesignMessage::create(
+        pool,
+        design_session_id,
+        &CreateDesignMessage {
+            role: DesignMessageRole::User,
+            content: payload.message.clone(),
+        },
+    )
+    .await?;
+
+    // Get existing messages for context
+    let existing_messages = DesignMessage::find_by_session_id(pool, design_session_id).await?;
+
+    // Call Claude CLI for AI response
+    let ai_response = call_claude_for_design(&existing_messages, &payload.message, &task).await?;
+
+    // Save assistant message
+    let assistant_message = DesignMessage::create(
+        pool,
+        design_session_id,
+        &CreateDesignMessage {
+            role: DesignMessageRole::Assistant,
+            content: ai_response,
+        },
+    )
+    .await?;
+
+    Ok(ResponseJson(ApiResponse::success(DesignChatResponse {
+        user_message,
+        assistant_message,
+    })))
+}
+
+/// Call Claude CLI to get AI response for design chat
+async fn call_claude_for_design(
+    messages: &[DesignMessage],
+    user_message: &str,
+    task: &Task,
+) -> Result<String, ApiError> {
+    // Build conversation history
+    let conversation = messages
+        .iter()
+        .map(|m| {
+            let role = match m.role {
+                DesignMessageRole::User => "User",
+                DesignMessageRole::Assistant => "Assistant",
+            };
+            format!("[{}]: {}", role, m.content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let system_prompt = "You are a helpful assistant for software design discussions. \
+        Help the user plan and design their implementation. \
+        Be concise but thorough. Respond in the same language as the user.";
+
+    let task_description = task.description.as_deref().unwrap_or("(no description)");
+
+    let full_prompt = if conversation.is_empty() {
+        format!(
+            "{}\n\nTask Title: {}\nTask Description: {}\n\nUser: {}",
+            system_prompt, task.title, task_description, user_message
+        )
+    } else {
+        format!(
+            "{}\n\nTask Title: {}\nTask Description: {}\n\nPrevious conversation:\n{}\n\nUser: {}",
+            system_prompt, task.title, task_description, conversation, user_message
+        )
+    };
+
+    // Call claude CLI with timeout (uses existing authentication from ~/.claude.json)
+    tracing::debug!("Calling claude CLI for design chat");
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(120), // 2 minute timeout
+        tokio::process::Command::new("claude")
+            .args(["--print", &full_prompt])
+            .stdin(std::process::Stdio::null()) // Prevent waiting for stdin
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+    )
+    .await
+    .map_err(|_| {
+        tracing::error!("Claude CLI timed out after 120 seconds");
+        ApiError::BadRequest("Claude CLI timed out. Please try again with a shorter message.".to_string())
+    })?
+    .map_err(|e| {
+        tracing::error!("Failed to run claude CLI: {}", e);
+        ApiError::BadRequest(format!(
+            "Failed to run claude CLI: {}. Make sure claude is installed and authenticated.",
+            e
+        ))
+    })?;
+
+    tracing::debug!("Claude CLI completed with status: {}", output.status);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!("Claude CLI error (stderr): {}", stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        tracing::error!("Claude CLI error (stdout): {}", stdout);
+        return Err(ApiError::BadRequest(format!(
+            "Claude CLI error: {}",
+            if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
+        )));
+    }
+
+    let response = String::from_utf8(output.stdout).map_err(|e| {
+        tracing::error!("Invalid UTF-8 from claude CLI: {}", e);
+        ApiError::BadRequest(format!("Invalid UTF-8 response from Claude: {}", e))
+    })?;
+
+    tracing::debug!("Claude CLI response length: {} chars", response.len());
+
+    Ok(response.trim().to_string())
+}
+
+/// SSE event types for design chat streaming
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", content = "data")]
+pub enum DesignChatStreamEvent {
+    /// User message was saved
+    UserMessageSaved { message: DesignMessage },
+    /// Chunk of assistant response
+    AssistantChunk { content: String },
+    /// Assistant response complete
+    AssistantComplete { message: DesignMessage },
+    /// Error occurred
+    Error { message: String },
+}
+
+/// Types for parsing Claude CLI streaming JSON output
+mod cli_protocol {
+    use serde::Deserialize;
+
+    /// Event envelope from CLI stdout (stream-json format)
+    #[derive(Debug, Deserialize)]
+    pub struct SdkEventEnvelope {
+        #[serde(rename = "type")]
+        pub type_: String,
+        #[serde(flatten)]
+        pub properties: serde_json::Value,
+    }
+}
+
+/// Stream design chat response using Server-Sent Events with Claude CLI interactive mode
+pub async fn design_chat_stream(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<DesignChatRequest>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+
+    let pool = deployment.db().pool.clone();
+
+    // Get or create design session
+    let design_session_id = if let Some(id) = task.design_session_id {
+        id
+    } else {
+        let session_id = Uuid::new_v4();
+        let session = Session::create_design_session(
+            &pool,
+            &CreateSession { executor: None },
+            session_id,
+        )
+        .await?;
+        Task::update_design_session_id(&pool, task.id, Some(session.id)).await?;
+        session.id
+    };
+
+    // Save user message
+    let user_message = DesignMessage::create(
+        &pool,
+        design_session_id,
+        &CreateDesignMessage {
+            role: DesignMessageRole::User,
+            content: payload.message.clone(),
+        },
+    )
+    .await?;
+
+    // Get existing messages for context
+    let existing_messages = DesignMessage::find_by_session_id(&pool, design_session_id).await?;
+
+    // Build the prompt
+    let conversation = existing_messages
+        .iter()
+        .map(|m| {
+            let role = match m.role {
+                DesignMessageRole::User => "User",
+                DesignMessageRole::Assistant => "Assistant",
+            };
+            format!("[{}]: {}", role, m.content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let system_prompt = "You are a helpful assistant for software design discussions. \
+        Help the user plan and design their implementation. \
+        Be concise but thorough. Respond in the same language as the user.";
+
+    let task_description = task.description.as_deref().unwrap_or("(no description)");
+
+    let full_prompt = if conversation.is_empty() {
+        format!(
+            "{}\n\nTask Title: {}\nTask Description: {}\n\nUser: {}",
+            system_prompt, task.title, task_description, payload.message
+        )
+    } else {
+        format!(
+            "{}\n\nTask Title: {}\nTask Description: {}\n\nPrevious conversation:\n{}\n\nUser: {}",
+            system_prompt, task.title, task_description, conversation, payload.message
+        )
+    };
+
+    // Create the SSE stream using Claude CLI --print mode with streaming
+    let stream = async_stream::stream! {
+        // First, send the saved user message
+        let user_event = DesignChatStreamEvent::UserMessageSaved {
+            message: user_message.clone(),
+        };
+        yield Ok(Event::default().json_data(&user_event).unwrap());
+
+        // Spawn Claude CLI in --print mode with streaming JSON output
+        // --print mode is required for --include-partial-messages to work
+        // Use home directory as working directory for CLI
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+
+        let mut child = match Command::new("npx")
+            .args([
+                "-y",
+                "@anthropic-ai/claude-code",
+                "--print",
+                "--output-format=stream-json",
+                "--include-partial-messages",
+                "--verbose",
+                &full_prompt,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .current_dir(&home_dir)
+            .env("NPM_CONFIG_LOGLEVEL", "error")
+            .kill_on_drop(true)
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(e) => {
+                tracing::error!("Failed to spawn Claude CLI: {}", e);
+                let error_event = DesignChatStreamEvent::Error {
+                    message: format!("Failed to spawn Claude CLI: {}. Make sure npx is available.", e),
+                };
+                yield Ok(Event::default().json_data(&error_event).unwrap());
+                return;
+            }
+        };
+
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let error_event = DesignChatStreamEvent::Error {
+                    message: "Failed to get Claude CLI stdout".to_string(),
+                };
+                yield Ok(Event::default().json_data(&error_event).unwrap());
+                return;
+            }
+        };
+
+        // Spawn a task to consume stderr (prevents buffer fill-up deadlock)
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            let trimmed = line.trim();
+                            if !trimmed.is_empty() {
+                                tracing::debug!("Claude CLI stderr: {}", trimmed);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Error reading stderr: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Read streaming output
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let mut full_response = String::new();
+
+        loop {
+            line.clear();
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(120),
+                reader.read_line(&mut line)
+            ).await {
+                Ok(Ok(0)) => {
+                    // EOF
+                    tracing::debug!("Claude CLI EOF");
+                    break;
+                }
+                Ok(Ok(_)) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+
+                    tracing::trace!("CLI output: {}", trimmed);
+
+                    // Parse JSON line
+                    if let Ok(envelope) = serde_json::from_str::<cli_protocol::SdkEventEnvelope>(trimmed) {
+                        match envelope.type_.as_str() {
+                            "stream_event" => {
+                                // Token-by-token streaming via stream_event
+                                // event.type = "content_block_delta", event.delta.text contains the token
+                                if let Some(event) = envelope.properties.get("event") {
+                                    if event.get("type").and_then(|t| t.as_str()) == Some("content_block_delta") {
+                                        if let Some(delta) = event.get("delta") {
+                                            if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
+                                                if !text.is_empty() {
+                                                    let chunk_event = DesignChatStreamEvent::AssistantChunk {
+                                                        content: text.to_string(),
+                                                    };
+                                                    yield Ok(Event::default().json_data(&chunk_event).unwrap());
+                                                    full_response.push_str(text);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "result" => {
+                                // CLI is done - extract final text if available
+                                if let Some(result) = envelope.properties.get("result").and_then(|r| r.as_str()) {
+                                    if full_response.is_empty() {
+                                        full_response = result.to_string();
+                                    }
+                                }
+                                tracing::debug!("Got result, CLI complete");
+                                break;
+                            }
+                            _ => {
+                                // Other event types (system, assistant, etc.) - ignore
+                            }
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Error reading CLI stdout: {}", e);
+                    let error_event = DesignChatStreamEvent::Error {
+                        message: format!("Error reading from Claude CLI: {}", e),
+                    };
+                    yield Ok(Event::default().json_data(&error_event).unwrap());
+                    break;
+                }
+                Err(_) => {
+                    tracing::error!("Claude CLI timed out");
+                    let error_event = DesignChatStreamEvent::Error {
+                        message: "Claude CLI timed out after 120 seconds".to_string(),
+                    };
+                    yield Ok(Event::default().json_data(&error_event).unwrap());
+                    break;
+                }
+            }
+        }
+
+        // Wait for the process to finish
+        let _ = child.wait().await;
+
+        // Save assistant message to database
+        if !full_response.trim().is_empty() {
+            let assistant_message = match DesignMessage::create(
+                &pool,
+                design_session_id,
+                &CreateDesignMessage {
+                    role: DesignMessageRole::Assistant,
+                    content: full_response.trim().to_string(),
+                },
+            )
+            .await
+            {
+                Ok(msg) => msg,
+                Err(e) => {
+                    tracing::error!("Failed to save assistant message: {}", e);
+                    let error_event = DesignChatStreamEvent::Error {
+                        message: format!("Failed to save response: {}", e),
+                    };
+                    yield Ok(Event::default().json_data(&error_event).unwrap());
+                    return;
+                }
+            };
+
+            // Send completion event
+            let complete_event = DesignChatStreamEvent::AssistantComplete {
+                message: assistant_message,
+            };
+            yield Ok(Event::default().json_data(&complete_event).unwrap());
+        } else {
+            tracing::warn!("No response received from Claude CLI");
+            let error_event = DesignChatStreamEvent::Error {
+                message: "No response received from Claude CLI".to_string(),
+            };
+            yield Ok(Event::default().json_data(&error_event).unwrap());
+        }
+    };
+
+    Ok(Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("keep-alive"),
+    ))
+}
+
+/// Get design session with all messages
+pub async fn get_design_session_with_messages(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<DesignSessionWithMessages>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Get or create design session
+    let (session, is_new) = if let Some(design_session_id) = task.design_session_id {
+        if let Some(session) = Session::find_by_id(pool, design_session_id).await? {
+            (session, false)
+        } else {
+            // Session was deleted but task still references it - create new one
+            let session_id = Uuid::new_v4();
+            let session = Session::create_design_session(
+                pool,
+                &CreateSession { executor: None },
+                session_id,
+            )
+            .await?;
+            Task::update_design_session_id(pool, task.id, Some(session.id)).await?;
+            (session, true)
+        }
+    } else {
+        // Create a new design session
+        let session_id = Uuid::new_v4();
+        let session = Session::create_design_session(
+            pool,
+            &CreateSession { executor: None },
+            session_id,
+        )
+        .await?;
+        Task::update_design_session_id(pool, task.id, Some(session.id)).await?;
+        (session, true)
+    };
+
+    let messages = if is_new {
+        vec![]
+    } else {
+        DesignMessage::find_by_session_id(pool, session.id).await?
+    };
+
+    Ok(ResponseJson(ApiResponse::success(DesignSessionWithMessages {
+        session,
+        messages,
+    })))
+}
+
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_actions_router = Router::new()
         .route("/", put(update_task))
-        .route("/", delete(delete_task));
+        .route("/", delete(delete_task))
+        .route("/design-session", get(get_or_create_design_session))
+        .route("/design-session/full", get(get_design_session_with_messages))
+        .route(
+            "/design-session/messages",
+            get(get_design_messages).post(add_design_message),
+        )
+        .route("/design-session/chat", post(design_chat))
+        .route("/design-session/chat/stream", post(design_chat_stream));
 
     let task_id_router = Router::new()
         .route("/", get(get_task))

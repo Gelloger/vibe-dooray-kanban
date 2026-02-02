@@ -569,7 +569,12 @@ impl ExecutionProcess {
             Some(s) => s,
             None => return Ok(None),
         };
-        let workspace = match Workspace::find_by_id(pool, session.workspace_id).await? {
+        // Design sessions don't have a workspace
+        let workspace_id = match session.workspace_id {
+            Some(id) => id,
+            None => return Ok(None),
+        };
+        let workspace = match Workspace::find_by_id(pool, workspace_id).await? {
             Some(w) => w,
             None => return Ok(None),
         };
@@ -589,7 +594,9 @@ impl ExecutionProcess {
             .await?
             .ok_or(sqlx::Error::RowNotFound)?;
 
-        let workspace = Workspace::find_by_id(pool, session.workspace_id)
+        // Design sessions don't have a workspace - this context requires a workspace
+        let workspace_id = session.workspace_id.ok_or(sqlx::Error::RowNotFound)?;
+        let workspace = Workspace::find_by_id(pool, workspace_id)
             .await?
             .ok_or(sqlx::Error::RowNotFound)?;
 

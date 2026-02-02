@@ -20,7 +20,7 @@ pub enum SessionError {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, TS)]
 pub struct Session {
     pub id: Uuid,
-    pub workspace_id: Uuid,
+    pub workspace_id: Option<Uuid>, // Nullable for design sessions
     pub executor: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -36,7 +36,7 @@ impl Session {
         sqlx::query_as!(
             Session,
             r#"SELECT id AS "id!: Uuid",
-                      workspace_id AS "workspace_id!: Uuid",
+                      workspace_id AS "workspace_id: Uuid",
                       executor,
                       created_at AS "created_at!: DateTime<Utc>",
                       updated_at AS "updated_at!: DateTime<Utc>"
@@ -58,7 +58,7 @@ impl Session {
         sqlx::query_as!(
             Session,
             r#"SELECT s.id AS "id!: Uuid",
-                      s.workspace_id AS "workspace_id!: Uuid",
+                      s.workspace_id AS "workspace_id: Uuid",
                       s.executor,
                       s.created_at AS "created_at!: DateTime<Utc>",
                       s.updated_at AS "updated_at!: DateTime<Utc>"
@@ -87,7 +87,7 @@ impl Session {
         sqlx::query_as!(
             Session,
             r#"SELECT s.id AS "id!: Uuid",
-                      s.workspace_id AS "workspace_id!: Uuid",
+                      s.workspace_id AS "workspace_id: Uuid",
                       s.executor,
                       s.created_at AS "created_at!: DateTime<Utc>",
                       s.updated_at AS "updated_at!: DateTime<Utc>"
@@ -118,7 +118,31 @@ impl Session {
             r#"INSERT INTO sessions (id, workspace_id, executor)
                VALUES ($1, $2, $3)
                RETURNING id AS "id!: Uuid",
-                         workspace_id AS "workspace_id!: Uuid",
+                         workspace_id AS "workspace_id: Uuid",
+                         executor,
+                         created_at AS "created_at!: DateTime<Utc>",
+                         updated_at AS "updated_at!: DateTime<Utc>""#,
+            id,
+            workspace_id,
+            data.executor
+        )
+        .fetch_one(pool)
+        .await?)
+    }
+
+    /// Create a design session (without workspace)
+    pub async fn create_design_session(
+        pool: &SqlitePool,
+        data: &CreateSession,
+        id: Uuid,
+    ) -> Result<Self, SessionError> {
+        let workspace_id: Option<Uuid> = None;
+        Ok(sqlx::query_as!(
+            Session,
+            r#"INSERT INTO sessions (id, workspace_id, executor)
+               VALUES ($1, $2, $3)
+               RETURNING id AS "id!: Uuid",
+                         workspace_id AS "workspace_id: Uuid",
                          executor,
                          created_at AS "created_at!: DateTime<Utc>",
                          updated_at AS "updated_at!: DateTime<Utc>""#,

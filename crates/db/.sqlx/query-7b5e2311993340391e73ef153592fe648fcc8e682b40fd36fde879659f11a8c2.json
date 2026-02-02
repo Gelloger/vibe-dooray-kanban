@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM dooray_settings\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_token",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_project_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_project_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "selected_tag_ids",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_domain",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "7b5e2311993340391e73ef153592fe648fcc8e682b40fd36fde879659f11a8c2"
+}

@@ -254,10 +254,24 @@ pub async fn create_task_attempt(
     };
 
     let attempt_id = Uuid::new_v4();
-    let git_branch_name = deployment
-        .container()
-        .git_branch_from_workspace(&attempt_id, &task.title)
-        .await;
+
+    // Use Dooray task number for branch name if available
+    let git_branch_name = if let Some(ref dooray_number) = task.dooray_task_number {
+        // Extract just the number part (e.g., "Notification-개발/123" -> "123")
+        let number = dooray_number.split('/').last().unwrap_or(dooray_number);
+        // Use target_branch from first repo (fallback to "develop")
+        let target_branch = payload
+            .repos
+            .first()
+            .map(|r| r.target_branch.as_str())
+            .unwrap_or("develop");
+        format!("feature/{}/{}", target_branch, number)
+    } else {
+        deployment
+            .container()
+            .git_branch_from_workspace(&attempt_id, &task.title)
+            .await
+    };
 
     let workspace = Workspace::create(
         pool,
@@ -1675,12 +1689,19 @@ pub async fn run_archive_script(
     Ok(ResponseJson(ApiResponse::success(execution_process)))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GhCliSetupQuery {
+    /// GHE hostname (e.g., "github.nhnent.com"), None for github.com
+    pub hostname: Option<String>,
+}
+
 #[axum::debug_handler]
 pub async fn gh_cli_setup_handler(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
+    Query(query): Query<GhCliSetupQuery>,
 ) -> Result<ResponseJson<ApiResponse<ExecutionProcess, GhCliSetupError>>, ApiError> {
-    match gh_cli_setup::run_gh_cli_setup(&deployment, &workspace).await {
+    match gh_cli_setup::run_gh_cli_setup(&deployment, &workspace, query.hostname.as_deref()).await {
         Ok(execution_process) => {
             deployment
                 .track_if_analytics_allowed(

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "UPDATE tasks\n               SET title = $3, description = $4, status = $5, parent_workspace_id = $6\n               WHERE id = $1 AND project_id = $2\n               RETURNING id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as \"design_session_id: Uuid\"\n               FROM tasks\n               WHERE dooray_task_id = $1",
   "describe": {
     "columns": [
       {
@@ -42,10 +42,30 @@
         "name": "updated_at!: DateTime<Utc>",
         "ordinal": 7,
         "type_info": "Text"
+      },
+      {
+        "name": "dooray_task_id",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_project_id",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_task_number",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "design_session_id: Uuid",
+        "ordinal": 11,
+        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 6
+      "Right": 1
     },
     "nullable": [
       true,
@@ -55,8 +75,12 @@
       false,
       true,
       false,
-      false
+      false,
+      true,
+      true,
+      true,
+      true
     ]
   },
-  "hash": "dd56ce0ef15032e2a0e16066f555b2e37bc01ea46b26f5a6a50b06d32434d0a9"
+  "hash": "e574b069fe29ce6c0131fd4a7beb554c06dd7a40a341f06334dae6f8cda33908"
 }

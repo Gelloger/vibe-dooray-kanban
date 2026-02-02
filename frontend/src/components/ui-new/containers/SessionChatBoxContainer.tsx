@@ -127,9 +127,10 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
 
   // Extract mode-specific values
   const session = mode === 'existing-session' ? props.session : undefined;
+  // Convert null to undefined for workspace_id (design sessions may have null workspace_id)
   const workspaceId =
     mode === 'existing-session'
-      ? props.session.workspace_id
+      ? (props.session.workspace_id ?? undefined)
       : mode === 'new-session'
         ? props.workspaceId
         : undefined;

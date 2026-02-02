@@ -86,3 +86,13 @@ vibe-kanban-cloud/
 
 .jj
 .sisyphus/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# OMC plugin state
+.omc/
+frontend/.omc/
+
+# Temp files
+temp

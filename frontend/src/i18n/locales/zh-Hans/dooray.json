@@ -1,0 +1,26 @@
+{
+  "createTask": {
+    "title": "创建Dooray任务",
+    "subjectLabel": "标题",
+    "subjectPlaceholder": "输入任务标题...",
+    "bodyLabel": "描述",
+    "bodyPlaceholder": "输入任务描述（支持Markdown）...",
+    "localProjectLabel": "本地项目",
+    "localProjectDescription": "任务将同步到此本地看板项目",
+    "selectLocalProject": "选择项目",
+    "markdownSupported": "支持Markdown格式",
+    "showPreview": "预览",
+    "hidePreview": "编辑",
+    "noContent": "无内容",
+    "create": "创建任务",
+    "creating": "创建中...",
+    "success": "任务创建成功",
+    "taskCreated": "任务已在Dooray创建并本地同步",
+    "taskCreatedWithNumber": "任务 #{{number}} 已创建并同步",
+    "failed": "创建任务失败",
+    "error": "错误",
+    "notConnected": "请先在设置中连接Dooray",
+    "noProjectSelected": "未选择Dooray项目",
+    "pleaseSelectProject": "请先在设置中选择Dooray项目"
+  }
+}

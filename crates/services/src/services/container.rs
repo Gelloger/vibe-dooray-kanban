@@ -313,8 +313,9 @@ pub trait ContainerService {
                     | ExecutionProcessRunReason::CleanupScript
             ) && let Ok(Some(session)) =
                 Session::find_by_id(&self.db().pool, process.session_id).await
+                && let Some(workspace_id) = session.workspace_id
                 && let Ok(Some(workspace)) =
-                    Workspace::find_by_id(&self.db().pool, session.workspace_id).await
+                    Workspace::find_by_id(&self.db().pool, workspace_id).await
                 && let Ok(Some(task)) = workspace.parent_task(&self.db().pool).await
                 && let Err(e) =
                     Task::update_status(&self.db().pool, task.id, TaskStatus::InReview).await

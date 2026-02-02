@@ -6,6 +6,30 @@ use strum_macros::{EnumIter, EnumString};
 use thiserror::Error;
 use ts_rs::TS;
 
+/// Find IntelliJ IDEA app bundle on macOS.
+/// Returns the app name if found (e.g., "IntelliJ IDEA").
+#[cfg(target_os = "macos")]
+fn find_intellij_app() -> Option<String> {
+    let app_names = [
+        "IntelliJ IDEA",
+        "IntelliJ IDEA CE",
+        "IntelliJ IDEA Ultimate",
+    ];
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    let search_paths = ["/Applications", &format!("{}/Applications", home)];
+
+    for base_path in &search_paths {
+        for app_name in &app_names {
+            let app_path = format!("{}/{}.app", base_path, app_name);
+            if Path::new(&app_path).exists() {
+                return Some(app_name.to_string());
+            }
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(tag = "type", rename_all = "snake_case")]
@@ -112,18 +136,58 @@ impl EditorConfig {
                     editor_type: self.editor_type.clone(),
                 })?;
 
-        let (executable, args) = command_parts.into_resolved().await.map_err(|e| match e {
-            ExecutorError::ExecutableNotFound { program } => EditorOpenError::ExecutableNotFound {
-                executable: program,
-                editor_type: self.editor_type.clone(),
-            },
-            _ => EditorOpenError::InvalidCommand {
-                details: e.to_string(),
-                editor_type: self.editor_type.clone(),
-            },
-        })?;
+        let result = command_parts.into_resolved().await;
 
-        Ok((executable, args))
+        match result {
+            Ok((executable, args)) => Ok((executable, args)),
+            Err(e) => {
+                // For IntelliJ on macOS, try app bundle fallback
+                #[cfg(target_os = "macos")]
+                if matches!(self.editor_type, EditorType::IntelliJ) {
+                    if let Some(app_name) = find_intellij_app() {
+                        // Use "open -a <app_name>" command
+                        let open_cmd =
+                            CommandBuilder::new("open").params(["-a".to_string(), app_name]);
+                        let open_parts =
+                            open_cmd
+                                .build_initial()
+                                .map_err(|build_err| EditorOpenError::InvalidCommand {
+                                    details: build_err.to_string(),
+                                    editor_type: self.editor_type.clone(),
+                                })?;
+
+                        return open_parts.into_resolved().await.map_err(
+                            |resolve_err| match resolve_err {
+                                ExecutorError::ExecutableNotFound { program } => {
+                                    EditorOpenError::ExecutableNotFound {
+                                        executable: program,
+                                        editor_type: self.editor_type.clone(),
+                                    }
+                                }
+                                _ => EditorOpenError::InvalidCommand {
+                                    details: resolve_err.to_string(),
+                                    editor_type: self.editor_type.clone(),
+                                },
+                            },
+                        );
+                    }
+                }
+
+                // Return original error
+                match e {
+                    ExecutorError::ExecutableNotFound { program } => {
+                        Err(EditorOpenError::ExecutableNotFound {
+                            executable: program,
+                            editor_type: self.editor_type.clone(),
+                        })
+                    }
+                    _ => Err(EditorOpenError::InvalidCommand {
+                        details: e.to_string(),
+                        editor_type: self.editor_type.clone(),
+                    }),
+                }
+            }
+        }
     }
 
     /// Check if the editor is available on the system.

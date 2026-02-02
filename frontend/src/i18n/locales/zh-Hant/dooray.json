@@ -1,0 +1,26 @@
+{
+  "createTask": {
+    "title": "建立Dooray任務",
+    "subjectLabel": "標題",
+    "subjectPlaceholder": "輸入任務標題...",
+    "bodyLabel": "描述",
+    "bodyPlaceholder": "輸入任務描述（支援Markdown）...",
+    "localProjectLabel": "本地專案",
+    "localProjectDescription": "任務將同步到此本地看板專案",
+    "selectLocalProject": "選擇專案",
+    "markdownSupported": "支援Markdown格式",
+    "showPreview": "預覽",
+    "hidePreview": "編輯",
+    "noContent": "無內容",
+    "create": "建立任務",
+    "creating": "建立中...",
+    "success": "任務建立成功",
+    "taskCreated": "任務已在Dooray建立並本地同步",
+    "taskCreatedWithNumber": "任務 #{{number}} 已建立並同步",
+    "failed": "建立任務失敗",
+    "error": "錯誤",
+    "notConnected": "請先在設定中連接Dooray",
+    "noProjectSelected": "未選擇Dooray專案",
+    "pleaseSelectProject": "請先在設定中選擇Dooray專案"
+  }
+}
