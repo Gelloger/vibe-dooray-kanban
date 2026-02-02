@@ -110,7 +110,11 @@ export type CreateDoorayCommentRequest = { dooray_task_id: string, dooray_projec
 
 export type CreateDoorayCommentResult = { success: boolean, message: string, };
 
-export type CreateDoorayTaskRequest = { dooray_project_id: string, subject: string, body: string | null, local_project_id: string, tag_ids: Array<string> | null, };
+export type CreateDoorayTaskRequest = { dooray_project_id: string, subject: string, body: string | null, local_project_id: string, tag_ids: Array<string> | null, 
+/**
+ * Parent task ID for creating subtasks
+ */
+parent_task_id: string | null, };
 
 export type CreateDoorayTaskResult = { success: boolean, dooray_task_id: string | null, dooray_task_number: number | null, local_task_id: string | null, message: string, };
 

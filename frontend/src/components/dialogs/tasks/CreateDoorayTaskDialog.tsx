@@ -21,21 +21,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useCreateDoorayTask, useDooraySettings, useDoorayProjects, useDoorayTags } from '@/hooks/useDooray';
 import { useProjects } from '@/hooks/useProjects';
 import { tasksApi } from '@/lib/api';
-import { Loader2, Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle } from 'lucide-react';
+import { Loader2, Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle, Bot, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Project, PatchType } from 'shared/types';
 import { extractBmadOutput } from '@/utils/conversationUtils';
 import { streamJsonPatchEntries } from '@/utils/streamJsonPatchEntries';
 import type { PatchTypeWithKey } from '@/hooks/useConversationHistory';
+import { AiSummaryPanel } from '../dooray-ai/AiSummaryPanel';
+import { AiSplitPanel } from '../dooray-ai/AiSplitPanel';
+import type { SplitTask, SummaryApplyMode } from '../dooray-ai/types';
 
 export interface CreateDoorayTaskDialogProps {
   initialTitle?: string;
   initialBody?: string;
   localProjectId?: string;
   sessionId?: string;
+  /** Task ID for design session AI features */
+  taskId?: string;
   /** If provided, the original task will be deleted after successful Dooray task creation */
   originalTaskId?: string;
 }
@@ -88,7 +98,7 @@ async function fetchExecutionProcessEntries(executionProcessId: string): Promise
 }
 
 const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>(
-  ({ initialTitle = '', initialBody = '', localProjectId: initialLocalProjectId, sessionId, originalTaskId }) => {
+  ({ initialTitle = '', initialBody = '', localProjectId: initialLocalProjectId, sessionId, taskId, originalTaskId }) => {
     const modal = useModal();
     const { t } = useTranslation(['dooray', 'common']);
     const { createTask, isCreating } = useCreateDoorayTask();
@@ -101,8 +111,15 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
     const [extractedTitle, setExtractedTitle] = useState(initialTitle);
     const [extractedBody, setExtractedBody] = useState(initialBody);
 
+    // AI Panel state
+    const [aiPanelOpen, setAiPanelOpen] = useState(false);
+    const [splitTasks, setSplitTasks] = useState<SplitTask[]>([]);
+
     // Get mandatory tag groups
     const mandatoryTagGroups = tagGroups.filter((g) => g.mandatory);
+
+    // Check if AI features are available (requires taskId for design session)
+    const isAiAvailable = !!taskId;
 
     // Fetch entries from session and extract BMAD output
     useEffect(() => {
@@ -178,41 +195,116 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
           }
         }
 
-        try {
-          const result = await createTask({
-            dooray_project_id: settings.selected_project_id,
-            subject: value.subject,
-            body: value.body || null,
-            local_project_id: value.localProjectId,
-            tag_ids: value.tagIds.length > 0 ? value.tagIds : null,
-          });
+        // Check if we have split tasks to create
+        const selectedSplitTasks = splitTasks.filter((t) => t.selected && t.title.trim());
 
-          if (result.success) {
-            // Delete the original task if provided (e.g., from Todo Design panel)
+        try {
+          if (selectedSplitTasks.length > 0) {
+            // Create parent task first
+            const parentResult = await createTask({
+              dooray_project_id: settings.selected_project_id,
+              subject: value.subject,
+              body: value.body || null,
+              local_project_id: value.localProjectId,
+              tag_ids: value.tagIds.length > 0 ? value.tagIds : null,
+              parent_task_id: null,
+            });
+
+            if (!parentResult.success || !parentResult.dooray_task_id) {
+              setMessage({
+                type: 'error',
+                text: parentResult.message || t('dooray:createTask.failed'),
+              });
+              return;
+            }
+
+            // Create subtasks
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const subtask of selectedSplitTasks) {
+              try {
+                const subtaskResult = await createTask({
+                  dooray_project_id: settings.selected_project_id,
+                  subject: subtask.title,
+                  body: subtask.description || null,
+                  local_project_id: value.localProjectId,
+                  tag_ids: value.tagIds.length > 0 ? value.tagIds : null,
+                  parent_task_id: parentResult.dooray_task_id,
+                });
+
+                if (subtaskResult.success) {
+                  successCount++;
+                } else {
+                  failCount++;
+                }
+              } catch {
+                failCount++;
+              }
+            }
+
+            // Delete original task if provided
             if (originalTaskId) {
               try {
                 await tasksApi.delete(originalTaskId);
               } catch (deleteError) {
                 console.warn('Failed to delete original task:', deleteError);
-                // Don't fail the whole operation if delete fails
               }
             }
 
-            setMessage({
-              type: 'success',
-              text: result.dooray_task_number
-                ? t('dooray:createTask.taskCreatedWithNumber', {
-                    number: Number(result.dooray_task_number),
-                  })
-                : t('dooray:createTask.taskCreated'),
-            });
-            // Close after a brief delay to show success message
+            if (failCount === 0) {
+              setMessage({
+                type: 'success',
+                text: t('dooray:createTask.tasksCreated', {
+                  count: successCount + 1,
+                }),
+              });
+            } else {
+              setMessage({
+                type: 'success',
+                text: t('dooray:createTask.tasksPartiallyCreated', {
+                  success: successCount + 1,
+                  fail: failCount,
+                }),
+              });
+            }
+
             setTimeout(() => modal.remove(), 1500);
           } else {
-            setMessage({
-              type: 'error',
-              text: result.message || t('dooray:createTask.failed'),
+            // Single task creation (original logic)
+            const result = await createTask({
+              dooray_project_id: settings.selected_project_id,
+              subject: value.subject,
+              body: value.body || null,
+              local_project_id: value.localProjectId,
+              tag_ids: value.tagIds.length > 0 ? value.tagIds : null,
+              parent_task_id: null,
             });
+
+            if (result.success) {
+              if (originalTaskId) {
+                try {
+                  await tasksApi.delete(originalTaskId);
+                } catch (deleteError) {
+                  console.warn('Failed to delete original task:', deleteError);
+                }
+              }
+
+              setMessage({
+                type: 'success',
+                text: result.dooray_task_number
+                  ? t('dooray:createTask.taskCreatedWithNumber', {
+                      number: Number(result.dooray_task_number),
+                    })
+                  : t('dooray:createTask.taskCreated'),
+              });
+              setTimeout(() => modal.remove(), 1500);
+            } else {
+              setMessage({
+                type: 'error',
+                text: result.message || t('dooray:createTask.failed'),
+              });
+            }
           }
         } catch (error) {
           setMessage({
@@ -235,6 +327,10 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
 
     const canSubmit = useStore(form.store, (state) => state.canSubmit);
     const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
+
+    // Get form values for AI panels
+    const currentSubject = useStore(form.store, (state) => state.values.subject);
+    const currentBody = useStore(form.store, (state) => state.values.body);
 
     // Update local project ID when localProjects load
     useEffect(() => {
@@ -265,9 +361,32 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
       [modal, isSubmitting]
     );
 
+    // Apply summary result
+    const handleApplySummary = useCallback((summary: string, mode: SummaryApplyMode) => {
+      switch (mode) {
+        case 'replace':
+          form.setFieldValue('body', summary);
+          break;
+        case 'prepend':
+          form.setFieldValue('body', `${summary}\n\n---\n\n${currentBody}`);
+          break;
+        case 'title':
+          form.setFieldValue('subject', summary);
+          break;
+      }
+    }, [form, currentBody]);
+
+    // Handle parent title change from split
+    const handleParentTitleChange = useCallback((title: string) => {
+      form.setFieldValue('subject', title);
+    }, [form]);
+
     const selectedDoorayProject = doorayProjects.find(
       (p) => p.id === settings?.selected_project_id
     );
+
+    // Check if split tasks are selected
+    const hasSelectedSplitTasks = splitTasks.some((t) => t.selected && t.title.trim());
 
     if (!isConnected) {
       return (
@@ -288,7 +407,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
 
     return (
       <Dialog open={modal.visible} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {t('dooray:createTask.title')}
@@ -367,7 +486,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
               <form.Field name="body">
                 {(field) =>
                   showPreview ? (
-                    <div className="min-h-[200px] max-h-[300px] overflow-auto p-3 border rounded-md bg-muted/30 prose prose-sm dark:prose-invert max-w-none">
+                    <div className="min-h-[150px] max-h-[200px] overflow-auto p-3 border rounded-md bg-muted/30 prose prose-sm dark:prose-invert max-w-none">
                       {field.state.value ? (
                         <pre className="whitespace-pre-wrap font-sans text-sm">
                           {field.state.value}
@@ -385,7 +504,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder={t('dooray:createTask.bodyPlaceholder')}
                       disabled={isCreating}
-                      className="min-h-[200px] max-h-[300px] font-mono text-sm"
+                      className="min-h-[150px] max-h-[200px] font-mono text-sm"
                     />
                   )
                 }
@@ -394,6 +513,60 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
                 {t('dooray:createTask.markdownSupported')}
               </p>
             </div>
+
+            {/* AI Panel */}
+            {isAiAvailable && (
+              <Collapsible open={aiPanelOpen} onOpenChange={setAiPanelOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Bot className="h-4 w-4" />
+                      {t('dooray:ai.panelTitle', 'AI 요약/분할')}
+                    </span>
+                    {aiPanelOpen ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-4 space-y-4">
+                  {/* Summary Panel */}
+                  <div className="border rounded-md p-3 space-y-3">
+                    <Label className="text-sm font-medium">
+                      {t('dooray:ai.summarySection', '요약')}
+                    </Label>
+                    <AiSummaryPanel
+                      taskId={taskId}
+                      body={currentBody}
+                      onApply={handleApplySummary}
+                      disabled={isCreating}
+                    />
+                  </div>
+
+                  {/* Split Panel */}
+                  <div className="border rounded-md p-3 space-y-3">
+                    <Label className="text-sm font-medium">
+                      {t('dooray:ai.splitSection', '태스크 분할')}
+                    </Label>
+                    <AiSplitPanel
+                      taskId={taskId}
+                      title={currentSubject}
+                      body={currentBody}
+                      splitTasks={splitTasks}
+                      onSplitTasksChange={setSplitTasks}
+                      onParentTitleChange={handleParentTitleChange}
+                      disabled={isCreating}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
 
             {/* Tag Selection for Mandatory Tag Groups */}
             {mandatoryTagGroups.length > 0 && (
@@ -518,6 +691,13 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {t('dooray:createTask.creating')}
+                  </>
+                ) : hasSelectedSplitTasks ? (
+                  <>
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    {t('dooray:createTask.createWithSubtasks', '태스크 생성 ({{count}}개)', {
+                      count: splitTasks.filter((t) => t.selected && t.title.trim()).length + 1,
+                    })}
                   </>
                 ) : (
                   <>
