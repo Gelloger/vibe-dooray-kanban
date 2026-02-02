@@ -31,6 +31,7 @@ AI coding agents are increasingly writing the world's code and human engineers n
 - Track the status of tasks that your coding agents are working on
 - Centralise configuration of coding agent MCP configs
 - Open projects remotely via SSH when running Vibe Kanban on a remote server
+- **Dooray Integration**: Sync tasks with NHN Dooray project management platform
 
 You can watch a video overview [here](https://youtu.be/TFT3KnZOOAk).
 
@@ -41,6 +42,33 @@ Make sure you have authenticated with your favourite coding agent. A full list o
 ```bash
 npx vibe-kanban
 ```
+
+## Dooray Integration
+
+Vibe Kanban supports integration with [NHN Dooray](https://dooray.com), a project management and collaboration platform.
+
+### Features
+
+- **Task Sync**: Import tasks from Dooray projects and sync status changes
+- **Task Creation**: Create Dooray tasks directly from Vibe Kanban with AI-assisted summary and split
+- **Comment Integration**: Post comments to Dooray tasks from your workflow
+- **Tag & Project Filtering**: Filter and organize tasks by Dooray tags and projects
+
+### Setup
+
+1. Go to **Settings** (gear icon in navbar)
+2. Open **Dooray Settings** tab
+3. Enter your Dooray API token and domain
+4. Select the project and tags to sync
+
+### AI-Powered Task Management
+
+When creating Dooray tasks, you can use AI to:
+- **Summarize** long task descriptions into concise summaries
+- **Split** large tasks into smaller subtasks automatically
+- **Edit** AI suggestions before creating tasks
+
+This feature uses your connected AI agent (Claude Code, Gemini, etc.) for processing.
 
 ## Documentation
 
