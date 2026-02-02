@@ -28,7 +28,7 @@ use services::services::{
     container::ContainerService,
     git_host::{
         self, CreatePrRequest, GitHostError, GitHostProvider, ProviderKind, UnifiedPrComment,
-        github::GhCli,
+        github::{GhCli, extract_host_from_url},
     },
     remote_sync,
 };
@@ -56,8 +56,16 @@ pub struct CreatePrApiRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(tag = "type", rename_all = "snake_case")]
 pub enum PrError {
-    CliNotInstalled { provider: ProviderKind },
-    CliNotLoggedIn { provider: ProviderKind },
+    CliNotInstalled {
+        provider: ProviderKind,
+        /// GHE hostname (e.g., "github.nhnent.com"), None for github.com
+        hostname: Option<String>,
+    },
+    CliNotLoggedIn {
+        provider: ProviderKind,
+        /// GHE hostname (e.g., "github.nhnent.com"), None for github.com
+        hostname: Option<String>,
+    },
     GitCliNotLoggedIn,
     GitCliNotInstalled,
     TargetBranchNotFound { branch: String },
@@ -87,8 +95,14 @@ pub struct PrCommentsResponse {
 #[ts(tag = "type", rename_all = "snake_case")]
 pub enum GetPrCommentsError {
     NoPrAttached,
-    CliNotInstalled { provider: ProviderKind },
-    CliNotLoggedIn { provider: ProviderKind },
+    CliNotInstalled {
+        provider: ProviderKind,
+        hostname: Option<String>,
+    },
+    CliNotLoggedIn {
+        provider: ProviderKind,
+        hostname: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, TS)]
@@ -270,6 +284,9 @@ pub async fn create_pr(
         }
     }
 
+    // Extract hostname for GHE support (None for github.com)
+    let ghe_hostname = extract_host_from_url(&target_remote.url);
+
     let git_host = match git_host::GitHostService::from_url(&target_remote.url) {
         Ok(host) => host,
         Err(GitHostError::UnsupportedProvider) => {
@@ -279,7 +296,10 @@ pub async fn create_pr(
         }
         Err(GitHostError::CliNotInstalled { provider }) => {
             return Ok(ResponseJson(ApiResponse::error_with_data(
-                PrError::CliNotInstalled { provider },
+                PrError::CliNotInstalled {
+                    provider,
+                    hostname: ghe_hostname,
+                },
             )));
         }
         Err(e) => return Err(ApiError::GitHost(e)),
@@ -376,10 +396,14 @@ pub async fn create_pr(
                 GitHostError::CliNotInstalled { provider } => Ok(ResponseJson(
                     ApiResponse::error_with_data(PrError::CliNotInstalled {
                         provider: *provider,
+                        hostname: ghe_hostname.clone(),
                     }),
                 )),
                 GitHostError::AuthFailed(_) => Ok(ResponseJson(ApiResponse::error_with_data(
-                    PrError::CliNotLoggedIn { provider },
+                    PrError::CliNotLoggedIn {
+                        provider,
+                        hostname: ghe_hostname.clone(),
+                    },
                 ))),
                 _ => Err(ApiError::GitHost(e)),
             }
@@ -422,6 +446,9 @@ pub async fn attach_existing_pr(
     let git = deployment.git();
     let remote = git.resolve_remote_for_branch(&repo.path, &workspace_repo.target_branch)?;
 
+    // Extract hostname for GHE support
+    let ghe_hostname = extract_host_from_url(&remote.url);
+
     let git_host = match git_host::GitHostService::from_url(&remote.url) {
         Ok(host) => host,
         Err(GitHostError::UnsupportedProvider) => {
@@ -431,7 +458,10 @@ pub async fn attach_existing_pr(
         }
         Err(GitHostError::CliNotInstalled { provider }) => {
             return Ok(ResponseJson(ApiResponse::error_with_data(
-                PrError::CliNotInstalled { provider },
+                PrError::CliNotInstalled {
+                    provider,
+                    hostname: ghe_hostname,
+                },
             )));
         }
         Err(e) => return Err(ApiError::GitHost(e)),
@@ -447,12 +477,18 @@ pub async fn attach_existing_pr(
         Ok(prs) => prs,
         Err(GitHostError::CliNotInstalled { provider }) => {
             return Ok(ResponseJson(ApiResponse::error_with_data(
-                PrError::CliNotInstalled { provider },
+                PrError::CliNotInstalled {
+                    provider,
+                    hostname: ghe_hostname.clone(),
+                },
             )));
         }
         Err(GitHostError::AuthFailed(_)) => {
             return Ok(ResponseJson(ApiResponse::error_with_data(
-                PrError::CliNotLoggedIn { provider },
+                PrError::CliNotLoggedIn {
+                    provider,
+                    hostname: ghe_hostname.clone(),
+                },
             )));
         }
         Err(e) => return Err(ApiError::GitHost(e)),
@@ -571,11 +607,17 @@ pub async fn get_pr_comments(
     let git = deployment.git();
     let remote = git.resolve_remote_for_branch(&repo.path, &workspace_repo.target_branch)?;
 
+    // Extract hostname for GHE support
+    let ghe_hostname = extract_host_from_url(&remote.url);
+
     let git_host = match git_host::GitHostService::from_url(&remote.url) {
         Ok(host) => host,
         Err(GitHostError::CliNotInstalled { provider }) => {
             return Ok(ResponseJson(ApiResponse::error_with_data(
-                GetPrCommentsError::CliNotInstalled { provider },
+                GetPrCommentsError::CliNotInstalled {
+                    provider,
+                    hostname: ghe_hostname,
+                },
             )));
         }
         Err(e) => return Err(ApiError::GitHost(e)),
@@ -601,10 +643,14 @@ pub async fn get_pr_comments(
                 GitHostError::CliNotInstalled { provider } => Ok(ResponseJson(
                     ApiResponse::error_with_data(GetPrCommentsError::CliNotInstalled {
                         provider: *provider,
+                        hostname: ghe_hostname.clone(),
                     }),
                 )),
                 GitHostError::AuthFailed(_) => Ok(ResponseJson(ApiResponse::error_with_data(
-                    GetPrCommentsError::CliNotLoggedIn { provider },
+                    GetPrCommentsError::CliNotLoggedIn {
+                        provider,
+                        hostname: ghe_hostname.clone(),
+                    },
                 ))),
                 _ => Err(ApiError::GitHost(e)),
             }
@@ -689,6 +735,9 @@ pub async fn create_workspace_from_pr(
         status: Some(TaskStatus::InProgress),
         parent_workspace_id: None,
         image_ids: None,
+        dooray_task_id: None,
+        dooray_project_id: None,
+        dooray_task_number: None,
     };
     let task = Task::create(pool, &create_task, task_id).await?;
 
@@ -732,6 +781,7 @@ pub async fn create_workspace_from_pr(
         Ok(repo_info) => {
             if let Err(e) = GhCli::new().pr_checkout(
                 &worktree_path,
+                repo_info.host.as_deref(),
                 &repo_info.owner,
                 &repo_info.repo_name,
                 payload.pr_number,

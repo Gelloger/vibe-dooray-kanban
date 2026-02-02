@@ -39,7 +39,7 @@ pub async fn queue_message(
             "follow_up_queued",
             serde_json::json!({
                 "session_id": session.id.to_string(),
-                "workspace_id": session.workspace_id.to_string(),
+                "workspace_id": session.workspace_id.map(|id| id.to_string()),
             }),
         )
         .await;
@@ -63,7 +63,7 @@ pub async fn cancel_queued_message(
             "follow_up_queue_cancelled",
             serde_json::json!({
                 "session_id": session.id.to_string(),
-                "workspace_id": session.workspace_id.to_string(),
+                "workspace_id": session.workspace_id.map(|id| id.to_string()),
             }),
         )
         .await;

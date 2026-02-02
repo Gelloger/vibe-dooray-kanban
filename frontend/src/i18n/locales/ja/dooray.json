@@ -1,0 +1,26 @@
+{
+  "createTask": {
+    "title": "Doorayタスク作成",
+    "subjectLabel": "件名",
+    "subjectPlaceholder": "タスクの件名を入力...",
+    "bodyLabel": "説明",
+    "bodyPlaceholder": "タスクの説明を入力（マークダウン対応）...",
+    "localProjectLabel": "ローカルプロジェクト",
+    "localProjectDescription": "タスクはこのローカルカンバンプロジェクトに同期されます",
+    "selectLocalProject": "プロジェクトを選択",
+    "markdownSupported": "マークダウン形式に対応しています",
+    "showPreview": "プレビュー",
+    "hidePreview": "編集",
+    "noContent": "コンテンツなし",
+    "create": "タスク作成",
+    "creating": "作成中...",
+    "success": "タスク作成完了",
+    "taskCreated": "Doorayにタスクが作成され、ローカルに同期されました",
+    "taskCreatedWithNumber": "タスク #{{number}} が作成され同期されました",
+    "failed": "タスク作成失敗",
+    "error": "エラー",
+    "notConnected": "先に設定でDoorayに接続してください",
+    "noProjectSelected": "Doorayプロジェクトが選択されていません",
+    "pleaseSelectProject": "先に設定でDoorayプロジェクトを選択してください"
+  }
+}

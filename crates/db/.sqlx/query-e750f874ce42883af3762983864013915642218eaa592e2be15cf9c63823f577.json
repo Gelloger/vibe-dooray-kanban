@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE rowid = $1",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as \"design_session_id: Uuid\"\n               FROM tasks\n               WHERE rowid = $1",
   "describe": {
     "columns": [
       {
@@ -42,6 +42,26 @@
         "name": "updated_at!: DateTime<Utc>",
         "ordinal": 7,
         "type_info": "Text"
+      },
+      {
+        "name": "dooray_task_id",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_project_id",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "dooray_task_number",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "design_session_id: Uuid",
+        "ordinal": 11,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -55,8 +75,12 @@
       false,
       true,
       false,
-      false
+      false,
+      true,
+      true,
+      true,
+      true
     ]
   },
-  "hash": "ec538c142a4daa4ba6ae91fa77a441b0b3a730fd1f6be39e811a7fd7fa3c7eb9"
+  "hash": "e750f874ce42883af3762983864013915642218eaa592e2be15cf9c63823f577"
 }

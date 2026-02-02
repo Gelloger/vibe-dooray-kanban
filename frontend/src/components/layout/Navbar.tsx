@@ -19,6 +19,7 @@ import {
   Plus,
   LogOut,
   LogIn,
+  Link2,
 } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { SearchBar } from '@/components/SearchBar';
@@ -38,6 +39,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { OAuthDialog } from '@/components/dialogs/global/OAuthDialog';
+import { DooraySettingsDialog } from '@/components/dialogs';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { oauthApi } from '@/lib/api';
 
@@ -137,6 +139,10 @@ export function Navbar() {
     } catch (err) {
       console.error('Error logging out:', err);
     }
+  };
+
+  const handleOpenDooray = () => {
+    DooraySettingsDialog.show({ projectId: projectId || undefined });
   };
 
   const isOAuthLoggedIn = loginStatus?.status === 'loggedin';
@@ -293,6 +299,11 @@ export function Navbar() {
                       </DropdownMenuItem>
                     );
                   })}
+
+                  <DropdownMenuItem onSelect={handleOpenDooray}>
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Dooray
+                  </DropdownMenuItem>
 
                   <DropdownMenuSeparator />
 

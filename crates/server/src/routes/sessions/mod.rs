@@ -106,8 +106,11 @@ pub async fn follow_up(
 ) -> Result<ResponseJson<ApiResponse<ExecutionProcess>>, ApiError> {
     let pool = &deployment.db().pool;
 
-    // Load workspace from session
-    let workspace = Workspace::find_by_id(pool, session.workspace_id)
+    // Load workspace from session (design sessions don't have workspaces)
+    let workspace_id = session.workspace_id.ok_or(ApiError::Workspace(
+        WorkspaceError::ValidationError("Design sessions cannot use follow-up".to_string()),
+    ))?;
+    let workspace = Workspace::find_by_id(pool, workspace_id)
         .await?
         .ok_or(ApiError::Workspace(WorkspaceError::ValidationError(
             "Workspace not found".to_string(),

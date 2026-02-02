@@ -68,7 +68,8 @@ impl EventService {
         session_id: Uuid,
     ) -> Result<(), SqlxError> {
         if let Some(session) = Session::find_by_id(pool, session_id).await?
-            && let Some(workspace) = Workspace::find_by_id(pool, session.workspace_id).await?
+            && let Some(workspace_id) = session.workspace_id
+            && let Some(workspace) = Workspace::find_by_id(pool, workspace_id).await?
         {
             Self::push_task_update_for_task(pool, msg_store, workspace.task_id).await?;
         }
@@ -82,8 +83,9 @@ impl EventService {
         session_id: Uuid,
     ) -> Result<(), SqlxError> {
         if let Some(session) = Session::find_by_id(pool, session_id).await?
+            && let Some(workspace_id) = session.workspace_id
             && let Some(workspace_with_status) =
-                Workspace::find_by_id_with_status(pool, session.workspace_id).await?
+                Workspace::find_by_id_with_status(pool, workspace_id).await?
         {
             msg_store.push_patch(workspace_patch::replace(&workspace_with_status));
         }

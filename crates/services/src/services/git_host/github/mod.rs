@@ -6,7 +6,7 @@ use std::{path::Path, time::Duration};
 
 use async_trait::async_trait;
 use backon::{ExponentialBuilder, Retryable};
-pub use cli::GhCli;
+pub use cli::{GhCli, extract_host_from_url};
 use cli::{GhCliError, GitHubRepoInfo};
 use db::models::merge::PullRequestInfo;
 use tokio::task;
@@ -359,16 +359,19 @@ impl GitHostProvider for GitHubProvider {
 
         (|| async {
             let cli = cli.clone();
+            let host = repo_info.host.clone();
             let owner = repo_info.owner.clone();
             let repo_name = repo_info.repo_name.clone();
 
-            let prs = task::spawn_blocking(move || cli.list_open_prs(&owner, &repo_name))
-                .await
-                .map_err(|err| {
-                    GitHostError::PullRequest(format!(
-                        "Failed to execute GitHub CLI for listing open PRs: {err}"
-                    ))
-                })?;
+            let prs = task::spawn_blocking(move || {
+                cli.list_open_prs(host.as_deref(), &owner, &repo_name)
+            })
+            .await
+            .map_err(|err| {
+                GitHostError::PullRequest(format!(
+                    "Failed to execute GitHub CLI for listing open PRs: {err}"
+                ))
+            })?;
             prs.map_err(GitHostError::from)
         })
         .retry(

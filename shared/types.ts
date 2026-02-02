@@ -40,15 +40,79 @@ export type UpdateTag = { tag_name: string | null, content: string | null, };
 
 export type TaskStatus = "todo" | "inprogress" | "inreview" | "done" | "cancelled";
 
-export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, };
+export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, design_session_id: string | null, };
 
-export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, };
+export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, design_session_id: string | null, };
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
-export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
+export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, };
 
 export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
+
+export type DooraySettings = { id: string, dooray_token: string, selected_project_id: string | null, selected_project_name: string | null, 
+/**
+ * JSON array of tag IDs to filter when syncing tasks
+ */
+selected_tag_ids: string | null, 
+/**
+ * Dooray domain (e.g., "nhnent.dooray.com")
+ */
+dooray_domain: string | null, created_at: Date, updated_at: Date, };
+
+export type CreateDooraySettings = { dooray_token: string, selected_project_id: string | null, selected_project_name: string | null, 
+/**
+ * JSON array of tag IDs to filter when syncing tasks
+ */
+selected_tag_ids: string | null, 
+/**
+ * Dooray domain (e.g., "nhnent.dooray.com")
+ */
+dooray_domain: string | null, };
+
+export type UpdateDooraySettings = { dooray_token: string | null, selected_project_id: string | null, selected_project_name: string | null, };
+
+export type DesignMessage = { id: string, session_id: string, role: DesignMessageRole, content: string, created_at: string, };
+
+export type DesignMessageRole = "user" | "assistant";
+
+export type CreateDesignMessage = { role: DesignMessageRole, content: string, };
+
+export type DoorayProject = { id: string, code: string, name: string, description: string | null, };
+
+export type DoorayTask = { id: string, number: bigint, subject: string, workflowClass: string | null, body: DoorayTaskBody | null, };
+
+export type DoorayTaskBody = { mimeType: string | null, content: string | null, };
+
+export type DoorayTag = { id: string, name: string, };
+
+export type DoorayTagGroup = { id: string, name: string | null, mandatory: boolean, selectOne: boolean, tags: Array<DoorayTag>, };
+
+export type DoorayTagsResponse = { tagGroups: Array<DoorayTagGroup>, };
+
+export type UpdateSelectedTagsRequest = { selected_tag_ids: Array<string> | null, };
+
+export type SaveSettingsRequest = { dooray_token: string, selected_project_id: string | null, selected_project_name: string | null, 
+/**
+ * Dooray domain (e.g., "nhnent.dooray.com")
+ */
+dooray_domain: string | null, };
+
+export type SyncRequest = { project_id: string, dooray_project_id: string, dooray_project_code: string, };
+
+export type SyncResult = { created: number, updated: number, skipped: number, };
+
+export type ImportByNumberRequest = { project_id: string, dooray_project_id: string, dooray_project_code: string, task_number: bigint, };
+
+export type ImportResult = { success: boolean, task_id: string | null, message: string, };
+
+export type CreateDoorayCommentRequest = { dooray_task_id: string, dooray_project_id: string, content: string, };
+
+export type CreateDoorayCommentResult = { success: boolean, message: string, };
+
+export type CreateDoorayTaskRequest = { dooray_project_id: string, subject: string, body: string | null, local_project_id: string, tag_ids: Array<string> | null, };
+
+export type CreateDoorayTaskResult = { success: boolean, dooray_task_id: string | null, dooray_task_number: number | null, local_task_id: string | null, message: string, };
 
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 
@@ -120,7 +184,7 @@ export type Workspace = { id: string, task_id: string, container_ref: string | n
 
 export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string, container_ref: string | null, branch: string, agent_working_dir: string | null, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, };
 
-export type Session = { id: string, workspace_id: string, executor: string | null, created_at: string, updated_at: string, };
+export type Session = { id: string, workspace_id: string | null, executor: string | null, created_at: string, updated_at: string, };
 
 export type ExecutionProcess = { id: string, session_id: string, run_reason: ExecutionProcessRunReason, executor_action: ExecutorAction, status: ExecutionProcessStatus, exit_code: bigint | null, 
 /**
@@ -286,6 +350,14 @@ export type OpenEditorResponse = { url: string | null, };
 
 export type CreateAndStartTaskRequest = { task: CreateTask, executor_profile_id: ExecutorProfileId, repos: Array<WorkspaceRepoInput>, };
 
+export type AddDesignMessageRequest = { content: string, role: DesignMessageRole, };
+
+export type DesignSessionWithMessages = { session: Session, messages: Array<DesignMessage>, };
+
+export type DesignChatRequest = { message: string, };
+
+export type DesignChatResponse = { user_message: DesignMessage, assistant_message: DesignMessage, };
+
 export type CreatePrApiRequest = { title: string, body: string | null, target_branch: string | null, draft: boolean | null, repo_id: string, auto_generate_description: boolean, };
 
 export type ImageResponse = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };
@@ -312,7 +384,15 @@ export type GitOperationError = { "type": "merge_conflicts", message: string, op
 
 export type PushError = { "type": "force_push_required" };
 
-export type PrError = { "type": "cli_not_installed", provider: ProviderKind, } | { "type": "cli_not_logged_in", provider: ProviderKind, } | { "type": "git_cli_not_logged_in" } | { "type": "git_cli_not_installed" } | { "type": "target_branch_not_found", branch: string, } | { "type": "unsupported_provider" };
+export type PrError = { "type": "cli_not_installed", provider: ProviderKind, 
+/**
+ * GHE hostname (e.g., "github.nhnent.com"), None for github.com
+ */
+hostname: string | null, } | { "type": "cli_not_logged_in", provider: ProviderKind, 
+/**
+ * GHE hostname (e.g., "github.nhnent.com"), None for github.com
+ */
+hostname: string | null, } | { "type": "git_cli_not_logged_in" } | { "type": "git_cli_not_installed" } | { "type": "target_branch_not_found", branch: string, } | { "type": "unsupported_provider" };
 
 export type RunScriptError = { "type": "no_script_configured" } | { "type": "process_already_running" };
 
@@ -322,7 +402,7 @@ export type AttachExistingPrRequest = { repo_id: string, };
 
 export type PrCommentsResponse = { comments: Array<UnifiedPrComment>, };
 
-export type GetPrCommentsError = { "type": "no_pr_attached" } | { "type": "cli_not_installed", provider: ProviderKind, } | { "type": "cli_not_logged_in", provider: ProviderKind, };
+export type GetPrCommentsError = { "type": "no_pr_attached" } | { "type": "cli_not_installed", provider: ProviderKind, hostname: string | null, } | { "type": "cli_not_logged_in", provider: ProviderKind, hostname: string | null, };
 
 export type GetPrCommentsQuery = { repo_id: string, };
 

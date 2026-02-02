@@ -1,0 +1,31 @@
+{
+  "createTask": {
+    "title": "Create Dooray Task",
+    "subjectLabel": "Subject",
+    "subjectPlaceholder": "Enter task subject...",
+    "bodyLabel": "Description",
+    "bodyPlaceholder": "Enter task description (Markdown supported)...",
+    "localProjectLabel": "Local Project",
+    "localProjectDescription": "The task will be synced to this local kanban project",
+    "selectLocalProject": "Select a project",
+    "markdownSupported": "Markdown formatting is supported",
+    "showPreview": "Preview",
+    "hidePreview": "Edit",
+    "noContent": "No content",
+    "create": "Create Task",
+    "creating": "Creating...",
+    "success": "Task Created",
+    "taskCreated": "Task has been created in Dooray and synced locally",
+    "taskCreatedWithNumber": "Task #{{number}} has been created and synced",
+    "failed": "Failed to create task",
+    "error": "Error",
+    "notConnected": "Please connect to Dooray first in settings",
+    "noProjectSelected": "No Dooray project selected",
+    "pleaseSelectProject": "Please select a Dooray project in settings first",
+    "tagsLabel": "Tags",
+    "loadingTags": "Loading tags...",
+    "selectOne": "select one",
+    "mandatoryTagRequired": "Please select a tag from {{groupName}}",
+    "mandatoryTagsDescription": "These tags are required by the Dooray project"
+  }
+}

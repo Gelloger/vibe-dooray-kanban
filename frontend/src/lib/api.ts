@@ -95,9 +95,33 @@ import {
   CreateFromPrError,
   MigrationRequest,
   MigrationResponse,
+  DooraySettings,
+  DoorayProject,
+  DoorayTask,
+  DoorayTagsResponse,
+  SaveSettingsRequest,
+  SyncRequest,
+  CreateDoorayCommentRequest,
+  CreateDoorayCommentResult,
+  CreateDoorayTaskRequest,
+  CreateDoorayTaskResult,
+  SyncResult,
+  ImportByNumberRequest,
+  ImportResult,
+  DesignMessage,
+  AddDesignMessageRequest,
+  DesignSessionWithMessages,
+  DesignChatResponse,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
+
+// SSE event types for design chat streaming
+export type DesignChatStreamEvent =
+  | { type: 'UserMessageSaved'; data: { message: DesignMessage } }
+  | { type: 'AssistantChunk'; data: { content: string } }
+  | { type: 'AssistantComplete'; data: { message: DesignMessage } }
+  | { type: 'Error'; data: { message: string } };
 
 export class ApiError<E = unknown> extends Error {
   public status?: number;
@@ -363,6 +387,127 @@ export const tasksApi = {
       method: 'DELETE',
     });
     return handleApiResponse<void>(response);
+  },
+
+  // Design Session APIs
+  getDesignSession: async (taskId: string): Promise<Session> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/design-session`);
+    return handleApiResponse<Session>(response);
+  },
+
+  getDesignSessionFull: async (
+    taskId: string
+  ): Promise<DesignSessionWithMessages> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/design-session/full`
+    );
+    return handleApiResponse<DesignSessionWithMessages>(response);
+  },
+
+  getDesignMessages: async (taskId: string): Promise<DesignMessage[]> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/design-session/messages`
+    );
+    return handleApiResponse<DesignMessage[]>(response);
+  },
+
+  addDesignMessage: async (
+    taskId: string,
+    data: AddDesignMessageRequest
+  ): Promise<DesignMessage> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/design-session/messages`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<DesignMessage>(response);
+  },
+
+  sendDesignChat: async (
+    taskId: string,
+    message: string
+  ): Promise<DesignChatResponse> => {
+    const response = await makeRequest(
+      `/api/tasks/${taskId}/design-session/chat`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }
+    );
+    return handleApiResponse<DesignChatResponse>(response);
+  },
+
+  /**
+   * Stream design chat response using Server-Sent Events.
+   * Returns an async generator that yields stream events.
+   */
+  sendDesignChatStream: async function* (
+    taskId: string,
+    message: string,
+    signal?: AbortSignal
+  ): AsyncGenerator<DesignChatStreamEvent> {
+    const response = await fetch(
+      `/api/tasks/${taskId}/design-session/chat/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+        signal,
+      }
+    );
+
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        errorMessage = response.statusText || errorMessage;
+      }
+      throw new ApiError(errorMessage, response.status, response);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE events
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data.trim()) {
+              try {
+                const event = JSON.parse(data) as DesignChatStreamEvent;
+                yield event;
+              } catch {
+                // Ignore invalid JSON lines
+                console.warn('Invalid SSE data:', data);
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   },
 };
 
@@ -710,9 +855,17 @@ export const attemptsApi = {
     return handleApiResponse<ExecutionProcess[]>(response);
   },
 
-  setupGhCli: async (attemptId: string): Promise<ExecutionProcess> => {
+  setupGhCli: async (
+    attemptId: string,
+    hostname?: string
+  ): Promise<ExecutionProcess> => {
+    const params = new URLSearchParams();
+    if (hostname) {
+      params.set('hostname', hostname);
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
     const response = await makeRequest(
-      `/api/task-attempts/${attemptId}/gh-cli-setup`,
+      `/api/task-attempts/${attemptId}/gh-cli-setup${query}`,
       {
         method: 'POST',
       }
@@ -1446,5 +1599,139 @@ export const searchApi = {
       options
     );
     return handleApiResponse<SearchResult[]>(response);
+  },
+};
+
+// Dooray Integration API
+export const doorayApi = {
+  /**
+   * Get current Dooray settings (token is masked)
+   */
+  getSettings: async (): Promise<DooraySettings | null> => {
+    const response = await makeRequest('/api/dooray/settings');
+    return handleApiResponse<DooraySettings | null>(response);
+  },
+
+  /**
+   * Save Dooray settings (token and selected project)
+   */
+  saveSettings: async (data: SaveSettingsRequest): Promise<DooraySettings> => {
+    const response = await makeRequest('/api/dooray/settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<DooraySettings>(response);
+  },
+
+  /**
+   * Remove Dooray integration
+   */
+  deleteSettings: async (): Promise<string> => {
+    const response = await makeRequest('/api/dooray/settings', {
+      method: 'DELETE',
+    });
+    return handleApiResponse<string>(response);
+  },
+
+  /**
+   * Update selected tag IDs for filtering sync
+   */
+  updateSelectedTags: async (tagIds: string[] | null): Promise<DooraySettings> => {
+    const response = await makeRequest('/api/dooray/settings/tags', {
+      method: 'POST',
+      body: JSON.stringify({ selected_tag_ids: tagIds }),
+    });
+    return handleApiResponse<DooraySettings>(response);
+  },
+
+  /**
+   * Update selected Dooray project
+   */
+  updateSelectedProject: async (
+    projectId: string,
+    projectName: string
+  ): Promise<DooraySettings> => {
+    const response = await makeRequest('/api/dooray/settings/project', {
+      method: 'POST',
+      body: JSON.stringify({ project_id: projectId, project_name: projectName }),
+    });
+    return handleApiResponse<DooraySettings>(response);
+  },
+
+  /**
+   * Get list of Dooray projects
+   */
+  getProjects: async (): Promise<DoorayProject[]> => {
+    const response = await makeRequest('/api/dooray/projects');
+    return handleApiResponse<DoorayProject[]>(response);
+  },
+
+  /**
+   * Get tags from a Dooray project
+   */
+  getTags: async (doorayProjectId: string): Promise<DoorayTagsResponse> => {
+    const response = await makeRequest(
+      `/api/dooray/projects/${doorayProjectId}/tags`
+    );
+    return handleApiResponse<DoorayTagsResponse>(response);
+  },
+
+  /**
+   * Get tasks from a Dooray project
+   */
+  getTasks: async (doorayProjectId: string): Promise<DoorayTask[]> => {
+    const response = await makeRequest(
+      `/api/dooray/projects/${doorayProjectId}/tasks`
+    );
+    return handleApiResponse<DoorayTask[]>(response);
+  },
+
+  /**
+   * Sync tasks from Dooray to local project
+   */
+  sync: async (data: SyncRequest): Promise<SyncResult> => {
+    const response = await makeRequest('/api/dooray/sync', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<SyncResult>(response);
+  },
+
+  /**
+   * Import a single Dooray task by its task number
+   */
+  importByNumber: async (data: ImportByNumberRequest): Promise<ImportResult> => {
+    // Convert BigInt to Number for JSON serialization (BigInt cannot be serialized)
+    const payload = {
+      ...data,
+      task_number: Number(data.task_number),
+    };
+    const response = await makeRequest('/api/dooray/import-by-number', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return handleApiResponse<ImportResult>(response);
+  },
+
+  /**
+   * Create a comment on a Dooray task
+   */
+  createComment: async (data: CreateDoorayCommentRequest): Promise<CreateDoorayCommentResult> => {
+    const response = await makeRequest('/api/dooray/comment', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<CreateDoorayCommentResult>(response);
+  },
+
+  /**
+   * Create a task in Dooray and sync to local kanban
+   */
+  createTask: async (data: CreateDoorayTaskRequest): Promise<CreateDoorayTaskResult> => {
+    const response = await makeRequest('/api/dooray/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<CreateDoorayTaskResult>(response);
   },
 };

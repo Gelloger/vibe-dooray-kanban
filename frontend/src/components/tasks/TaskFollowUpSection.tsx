@@ -77,8 +77,8 @@ export function TaskFollowUpSection({
   const { t } = useTranslation('tasks');
   const { projectId } = useProject();
 
-  // Derive IDs from session
-  const workspaceId = session?.workspace_id;
+  // Derive IDs from session (convert null to undefined for hooks)
+  const workspaceId = session?.workspace_id ?? undefined;
   const sessionId = session?.id;
 
   const { isAttemptRunning, stopExecution, isStopping, processes } =

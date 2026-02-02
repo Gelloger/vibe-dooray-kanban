@@ -1,0 +1,31 @@
+{
+  "createTask": {
+    "title": "두레이 태스크 생성",
+    "subjectLabel": "제목",
+    "subjectPlaceholder": "태스크 제목을 입력하세요...",
+    "bodyLabel": "설명",
+    "bodyPlaceholder": "태스크 설명을 입력하세요 (마크다운 지원)...",
+    "localProjectLabel": "로컬 프로젝트",
+    "localProjectDescription": "태스크가 이 로컬 칸반 프로젝트에 동기화됩니다",
+    "selectLocalProject": "프로젝트 선택",
+    "markdownSupported": "마크다운 형식을 지원합니다",
+    "showPreview": "미리보기",
+    "hidePreview": "편집",
+    "noContent": "내용 없음",
+    "create": "태스크 생성",
+    "creating": "생성 중...",
+    "success": "태스크 생성 완료",
+    "taskCreated": "두레이에 태스크가 생성되고 로컬에 동기화되었습니다",
+    "taskCreatedWithNumber": "태스크 #{{number}}이(가) 생성되고 동기화되었습니다",
+    "failed": "태스크 생성 실패",
+    "error": "오류",
+    "notConnected": "먼저 설정에서 두레이에 연결해주세요",
+    "noProjectSelected": "두레이 프로젝트가 선택되지 않았습니다",
+    "pleaseSelectProject": "먼저 설정에서 두레이 프로젝트를 선택해주세요",
+    "tagsLabel": "태그",
+    "loadingTags": "태그 로딩 중...",
+    "selectOne": "하나 선택",
+    "mandatoryTagRequired": "{{groupName}}에서 태그를 선택해주세요",
+    "mandatoryTagsDescription": "두레이 프로젝트에서 필수로 요구하는 태그입니다"
+  }
+}

@@ -174,7 +174,22 @@
     "loadingAttempts": "Loading attempts...",
     "errorLoadingAttempts": "Failed to load attempts",
     "attemptsCount": "Attempts ({{count}})",
-    "noAttempts": "No attempts yet"
+    "noAttempts": "No attempts yet",
+    "tabs": {
+      "design": "Design",
+      "attempts": "Attempts"
+    },
+    "design": {
+      "title": "Design Session",
+      "description": "Chat with Claude to plan your implementation before creating workspaces. Design your approach, discuss architecture, and refine requirements.",
+      "comingSoon": "Design chat feature coming soon!",
+      "error": "Failed to load design session",
+      "linkedToDooray": "Linked to Dooray task {{number}}",
+      "emptyState": "Start a conversation to plan your implementation. Describe what you want to build and get suggestions from the AI.",
+      "chatPlaceholder": "Describe what you want to build...",
+      "aiPlaceholder": "This is a placeholder response. AI integration coming soon!",
+      "send": "Send"
+    }
   },
   "processes": {
     "noLogsAvailable": "No logs available",
@@ -203,6 +218,7 @@
     "closePanel": "Close panel"
   },
   "navigateToParent": "Navigate to parent task attempt",
+  "startTask": "Start working on this task",
   "toolbar": {
     "actions": "Actions",
     "noAttempts": "No attempts yet",
@@ -511,7 +527,9 @@
     "startReview": "Start Review",
     "startingReview": "Starting Review...",
     "task": "Task",
-    "duplicate": "Duplicate"
+    "duplicate": "Duplicate",
+    "saveToDooray": "Save to Dooray",
+    "savingToDooray": "Loading..."
   },
   "editBranchName": {
     "dialog": {
@@ -727,6 +745,9 @@
     "statusSuccess": "Completed successfully",
     "statusFailed": "Failed with exit code {{exitCode}}",
     "statusKilled": "Process was killed"
+  },
+  "dooray": {
+    "saveTooltip": "Save to Dooray"
   },
   "createWorkspaceFromPr": {
     "title": "Create Workspace from PR",

@@ -47,7 +47,11 @@ pub async fn start_review(
 ) -> Result<ResponseJson<ApiResponse<ExecutionProcess, ReviewError>>, ApiError> {
     let pool = &deployment.db().pool;
 
-    let workspace = Workspace::find_by_id(pool, session.workspace_id)
+    // Design sessions don't have workspaces
+    let workspace_id = session.workspace_id.ok_or(ApiError::Workspace(
+        WorkspaceError::ValidationError("Design sessions cannot use review".to_string()),
+    ))?;
+    let workspace = Workspace::find_by_id(pool, workspace_id)
         .await?
         .ok_or(ApiError::Workspace(WorkspaceError::ValidationError(
             "Workspace not found".to_string(),

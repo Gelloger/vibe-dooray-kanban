@@ -85,14 +85,16 @@ export function WorkspacesMain({
                 </p>
               </div>
             ) : (
-              <div className="flex-1 min-h-0 overflow-hidden flex justify-center">
-                <div className="w-chat max-w-full h-full">
-                  <RetryUiProvider attemptId={workspaceWithSession.id}>
-                    <ConversationList
-                      ref={conversationListRef}
-                      attempt={workspaceWithSession}
-                    />
-                  </RetryUiProvider>
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col justify-center">
+                <div className="w-chat max-w-full h-full flex flex-col">
+                  <div className="flex-1 min-h-0">
+                    <RetryUiProvider attemptId={workspaceWithSession.id}>
+                      <ConversationList
+                        ref={conversationListRef}
+                        attempt={workspaceWithSession}
+                      />
+                    </RetryUiProvider>
+                  </div>
                 </div>
               </div>
             )}

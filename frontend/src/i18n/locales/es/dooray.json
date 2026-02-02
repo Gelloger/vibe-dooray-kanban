@@ -1,0 +1,26 @@
+{
+  "createTask": {
+    "title": "Crear tarea Dooray",
+    "subjectLabel": "Asunto",
+    "subjectPlaceholder": "Ingrese el asunto de la tarea...",
+    "bodyLabel": "Descripción",
+    "bodyPlaceholder": "Ingrese la descripción (Markdown compatible)...",
+    "localProjectLabel": "Proyecto local",
+    "localProjectDescription": "La tarea se sincronizará con este proyecto kanban local",
+    "selectLocalProject": "Seleccionar proyecto",
+    "markdownSupported": "Se admite el formato Markdown",
+    "showPreview": "Vista previa",
+    "hidePreview": "Editar",
+    "noContent": "Sin contenido",
+    "create": "Crear tarea",
+    "creating": "Creando...",
+    "success": "Tarea creada",
+    "taskCreated": "La tarea se ha creado en Dooray y sincronizado localmente",
+    "taskCreatedWithNumber": "La tarea #{{number}} se ha creado y sincronizado",
+    "failed": "Error al crear",
+    "error": "Error",
+    "notConnected": "Por favor conecte a Dooray primero en la configuración",
+    "noProjectSelected": "No se ha seleccionado proyecto Dooray",
+    "pleaseSelectProject": "Por favor seleccione un proyecto Dooray primero en la configuración"
+  }
+}
