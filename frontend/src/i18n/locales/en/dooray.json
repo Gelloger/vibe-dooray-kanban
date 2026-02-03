@@ -27,5 +27,15 @@
     "selectOne": "select one",
     "mandatoryTagRequired": "Please select a tag from {{groupName}}",
     "mandatoryTagsDescription": "These tags are required by the Dooray project"
+  },
+  "updateBody": {
+    "title": "Update Dooray Body",
+    "bodyLabel": "Body",
+    "bodyPlaceholder": "Enter task body (Markdown supported)...",
+    "update": "Update",
+    "updating": "Updating...",
+    "success": "Dooray task body has been updated",
+    "failed": "Failed to update body",
+    "syncButton": "Sync Dooray Body"
   }
 }

@@ -121,6 +121,8 @@ export type DesignChatStreamEvent =
   | { type: 'UserMessageSaved'; data: { message: DesignMessage } }
   | { type: 'AssistantChunk'; data: { content: string } }
   | { type: 'AssistantComplete'; data: { message: DesignMessage } }
+  | { type: 'ToolUse'; data: { tool_name: string; tool_input: Record<string, unknown> } }
+  | { type: 'ToolResult'; data: { tool_name: string; output: string } }
   | { type: 'Error'; data: { message: string } };
 
 export class ApiError<E = unknown> extends Error {
@@ -1738,5 +1740,16 @@ export const doorayApi = {
       body: JSON.stringify(data),
     });
     return handleApiResponse<CreateDoorayTaskResult>(response);
+  },
+
+  /**
+   * Update a Dooray task's body/description
+   */
+  updateTask: async (doorayTaskId: string, body: string): Promise<{ success: boolean; message: string }> => {
+    const response = await makeRequest(`/api/dooray/tasks/${doorayTaskId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ body }),
+    });
+    return handleApiResponse<{ success: boolean; message: string }>(response);
   },
 };

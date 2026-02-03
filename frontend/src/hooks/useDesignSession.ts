@@ -165,6 +165,20 @@ export function useDesignSessionMutations(taskId?: string) {
   };
 }
 
+// Tool event type for design chat streaming
+export interface ToolEvent {
+  type: 'tool_use' | 'tool_result';
+  toolName: string;
+  content: string;
+}
+
+// Streaming event that preserves order of text and tool events
+export interface StreamingEvent {
+  type: 'text' | 'tool_use' | 'tool_result';
+  content: string;
+  toolName?: string;
+}
+
 /**
  * Hook for streaming design chat with real-time updates.
  * Provides chunk-by-chunk response streaming.
@@ -173,8 +187,13 @@ export function useDesignChatStream(taskId?: string) {
   const queryClient = useQueryClient();
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  const [streamingEvents, setStreamingEvents] = useState<StreamingEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserMessage, setCurrentUserMessage] = useState<DesignMessage | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Track if we need to start a new text segment after tool events
+  const pendingTextRef = useRef<string>('');
 
   const refetchQueries = useCallback(async () => {
     if (taskId) {
@@ -205,9 +224,12 @@ export function useDesignChatStream(taskId?: string) {
 
       setIsStreaming(true);
       setStreamingContent('');
+      setToolEvents([]);
+      setStreamingEvents([]);
       setError(null);
+      pendingTextRef.current = '';
 
-      // Optimistic update: show user message immediately
+      // Create user message to display immediately (not via cache to ensure correct ordering)
       const optimisticUserMessage: DesignMessage = {
         id: `temp-${Date.now()}`,
         session_id: '',
@@ -215,13 +237,7 @@ export function useDesignChatStream(taskId?: string) {
         content: message,
         created_at: new Date().toISOString(),
       };
-      queryClient.setQueryData<DesignSessionWithMessages>(
-        designSessionKeys.fullByTaskId(taskId),
-        (old) =>
-          old
-            ? { ...old, messages: [...old.messages, optimisticUserMessage] }
-            : undefined
-      );
+      setCurrentUserMessage(optimisticUserMessage);
 
       let userMessage: DesignMessage | null = null;
       let assistantMessage: DesignMessage | null = null;
@@ -238,29 +254,56 @@ export function useDesignChatStream(taskId?: string) {
           switch (event.type) {
             case 'UserMessageSaved':
               userMessage = event.data.message;
-              // Replace optimistic message with real one
-              queryClient.setQueryData<DesignSessionWithMessages>(
-                designSessionKeys.fullByTaskId(taskId),
-                (old) =>
-                  old
-                    ? {
-                        ...old,
-                        messages: old.messages.map((m) =>
-                          m.id === optimisticUserMessage.id ? userMessage! : m
-                        ),
-                      }
-                    : undefined
-              );
+              // Update current user message with server-assigned ID
+              setCurrentUserMessage(userMessage);
               break;
 
             case 'AssistantChunk':
               accumulatedContent += event.data.content;
+              pendingTextRef.current += event.data.content;
               setStreamingContent(accumulatedContent);
+              // Update or add text event in streamingEvents
+              setStreamingEvents(prev => {
+                const lastEvent = prev[prev.length - 1];
+                if (lastEvent?.type === 'text') {
+                  // Append to existing text segment
+                  return [
+                    ...prev.slice(0, -1),
+                    { ...lastEvent, content: lastEvent.content + event.data.content }
+                  ];
+                } else {
+                  // Start new text segment
+                  return [...prev, { type: 'text', content: event.data.content }];
+                }
+              });
               onChunk?.(event.data.content);
               break;
 
             case 'AssistantComplete':
               assistantMessage = event.data.message;
+              break;
+
+            case 'ToolUse':
+              setToolEvents(prev => [...prev, {
+                type: 'tool_use',
+                toolName: event.data.tool_name,
+                content: JSON.stringify(event.data.tool_input, null, 2),
+              }]);
+              // Add tool event to streamingEvents (this breaks text continuity)
+              setStreamingEvents(prev => [...prev, {
+                type: 'tool_use',
+                toolName: event.data.tool_name,
+                content: JSON.stringify(event.data.tool_input, null, 2),
+              }]);
+              break;
+
+            case 'ToolResult':
+              setToolEvents(prev => [...prev, {
+                type: 'tool_result',
+                toolName: event.data.tool_name,
+                content: event.data.output,
+              }]);
+              // Skip adding tool_result to streamingEvents (user said to remove it)
               break;
 
             case 'Error':
@@ -288,6 +331,10 @@ export function useDesignChatStream(taskId?: string) {
       } finally {
         setIsStreaming(false);
         setStreamingContent('');
+        setToolEvents([]);
+        setStreamingEvents([]);
+        setCurrentUserMessage(null);
+        pendingTextRef.current = '';
         abortControllerRef.current = null;
       }
     },
@@ -300,13 +347,20 @@ export function useDesignChatStream(taskId?: string) {
       abortControllerRef.current = null;
     }
     setIsStreaming(false);
-  }, []);
+    setCurrentUserMessage(null);
+    setStreamingEvents([]);
+    // Refetch to get any saved messages
+    refetchQueries();
+  }, [refetchQueries]);
 
   return {
     sendStreamingChat,
     cancelStream,
     isStreaming,
     streamingContent,
+    streamingEvents,
+    toolEvents,
+    currentUserMessage,
     error,
   };
 }

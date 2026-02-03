@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::State,
     response::Json as ResponseJson,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use db::models::{
     dooray_settings::{CreateDooraySettings, DooraySettings},
@@ -31,6 +31,7 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/dooray/import-by-number", post(import_by_number))
         .route("/dooray/comment", post(create_dooray_comment))
         .route("/dooray/tasks", post(create_dooray_task))
+        .route("/dooray/tasks/{dooray_task_id}", put(update_dooray_task))
 }
 
 // ============== Settings Endpoints ==============
@@ -500,6 +501,17 @@ pub struct CreateDoorayTaskResult {
     pub message: String,
 }
 
+#[derive(Debug, Deserialize, TS)]
+pub struct UpdateDoorayTaskRequest {
+    pub body: String,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct UpdateDoorayTaskResult {
+    pub success: bool,
+    pub message: String,
+}
+
 async fn sync_dooray_tasks(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<SyncRequest>,
@@ -924,6 +936,64 @@ async fn create_dooray_task(
         dooray_task_number: created_task.number,
         local_task_id: Some(local_task_id),
         message: "Dooray 태스크가 생성되었습니다.".to_string(),
+    })))
+}
+
+// ============== Update Dooray Task Endpoint ==============
+
+async fn update_dooray_task(
+    State(deployment): State<DeploymentImpl>,
+    axum::extract::Path(dooray_task_id): axum::extract::Path<String>,
+    Json(payload): Json<UpdateDoorayTaskRequest>,
+) -> Result<ResponseJson<ApiResponse<UpdateDoorayTaskResult>>, ApiError> {
+    // Find local task by dooray_task_id to get the dooray_project_id
+    let local_task = Task::find_by_dooray_task_id(&deployment.db().pool, &dooray_task_id).await?;
+
+    let dooray_project_id = match local_task {
+        Some(task) => {
+            task.dooray_project_id.ok_or_else(|| {
+                ApiError::BadRequest("태스크에 Dooray 프로젝트 정보가 없습니다.".to_string())
+            })?
+        }
+        None => {
+            return Ok(ResponseJson(ApiResponse::success(UpdateDoorayTaskResult {
+                success: false,
+                message: "해당 Dooray 태스크를 찾을 수 없습니다.".to_string(),
+            })));
+        }
+    };
+
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    // Dooray API: PUT /project/v1/projects/{projectId}/posts/{postId}
+    let response = client
+        .put(format!(
+            "{}/project/v1/projects/{}/posts/{}",
+            DOORAY_API_BASE, dooray_project_id, dooray_task_id
+        ))
+        .json(&serde_json::json!({
+            "body": {
+                "mimeType": "text/x-markdown",
+                "content": payload.body
+            }
+        }))
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        tracing::error!("Failed to update Dooray task: {}", error_text);
+        return Ok(ResponseJson(ApiResponse::success(UpdateDoorayTaskResult {
+            success: false,
+            message: "Dooray 태스크 업데이트에 실패했습니다.".to_string(),
+        })));
+    }
+
+    Ok(ResponseJson(ApiResponse::success(UpdateDoorayTaskResult {
+        success: true,
+        message: "Dooray 태스크가 업데이트되었습니다.".to_string(),
     })))
 }
 

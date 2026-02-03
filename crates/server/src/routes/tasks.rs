@@ -16,6 +16,7 @@ use std::convert::Infallible;
 use db::models::{
     design_message::{CreateDesignMessage, DesignMessage, DesignMessageRole},
     image::TaskImage,
+    project_repo::ProjectRepo,
     repo::{Repo, RepoError},
     session::{CreateSession, Session},
     task::{CreateTask, Task, TaskWithAttemptStatus, UpdateTask},
@@ -667,7 +668,7 @@ async fn call_claude_for_design(
 }
 
 /// SSE event types for design chat streaming
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 #[serde(tag = "type", content = "data")]
 pub enum DesignChatStreamEvent {
     /// User message was saved
@@ -676,6 +677,16 @@ pub enum DesignChatStreamEvent {
     AssistantChunk { content: String },
     /// Assistant response complete
     AssistantComplete { message: DesignMessage },
+    /// Tool use started
+    ToolUse {
+        tool_name: String,
+        tool_input: serde_json::Value,
+    },
+    /// Tool result received
+    ToolResult {
+        tool_name: String,
+        output: String,
+    },
     /// Error occurred
     Error { message: String },
 }
@@ -766,6 +777,18 @@ pub async fn design_chat_stream(
         )
     };
 
+    // Get repos for the project to determine working directory
+    let repos = ProjectRepo::find_repos_for_project(&pool, task.project_id)
+        .await
+        .unwrap_or_default();
+
+    // Use the first repo's path as working directory, fallback to home
+    let working_dir = if let Some(repo) = repos.first() {
+        repo.path.to_string_lossy().to_string()
+    } else {
+        std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
+    };
+
     // Create the SSE stream using Claude CLI --print mode with streaming
     let stream = async_stream::stream! {
         // First, send the saved user message
@@ -776,9 +799,9 @@ pub async fn design_chat_stream(
 
         // Spawn Claude CLI in --print mode with streaming JSON output
         // --print mode is required for --include-partial-messages to work
-        // Use home directory as working directory for CLI
-        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-
+        // Use repo directory as working directory for CLI to enable read-only tools
+        // Note: Claude CLI doesn't have --allowedTools option
+        // Tools are determined by the working directory context
         let mut child = match Command::new("npx")
             .args([
                 "-y",
@@ -792,7 +815,7 @@ pub async fn design_chat_stream(
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .current_dir(&home_dir)
+            .current_dir(&working_dir)
             .env("NPM_CONFIG_LOGLEVEL", "error")
             .kill_on_drop(true)
             .spawn()
@@ -870,6 +893,72 @@ pub async fn design_chat_stream(
                     // Parse JSON line
                     if let Ok(envelope) = serde_json::from_str::<cli_protocol::SdkEventEnvelope>(trimmed) {
                         match envelope.type_.as_str() {
+                            "assistant" => {
+                                // Handle tool_use blocks in assistant messages
+                                if let Some(message) = envelope.properties.get("message") {
+                                    if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+                                        for block in content {
+                                            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                                                let tool_name = block.get("name")
+                                                    .and_then(|n| n.as_str())
+                                                    .unwrap_or("unknown")
+                                                    .to_string();
+                                                let tool_input = block.get("input")
+                                                    .cloned()
+                                                    .unwrap_or(serde_json::Value::Null);
+
+                                                let tool_event = DesignChatStreamEvent::ToolUse {
+                                                    tool_name,
+                                                    tool_input,
+                                                };
+                                                yield Ok(Event::default().json_data(&tool_event).unwrap());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "user" => {
+                                // Handle tool_result blocks in user messages
+                                if let Some(message) = envelope.properties.get("message") {
+                                    if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+                                        for block in content {
+                                            if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
+                                                let tool_name = block.get("tool_use_id")
+                                                    .and_then(|id| id.as_str())
+                                                    .unwrap_or("unknown")
+                                                    .to_string();
+                                                let output = block.get("content")
+                                                    .and_then(|c| {
+                                                        if let Some(s) = c.as_str() {
+                                                            Some(s.to_string())
+                                                        } else if let Some(arr) = c.as_array() {
+                                                            // content is an array - extract text items
+                                                            let texts: Vec<String> = arr.iter()
+                                                                .filter_map(|item| {
+                                                                    if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                                                        item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                                                                    } else {
+                                                                        None
+                                                                    }
+                                                                })
+                                                                .collect();
+                                                            Some(texts.join("\n"))
+                                                        } else {
+                                                            None
+                                                        }
+                                                    })
+                                                    .unwrap_or_default();
+
+                                                let result_event = DesignChatStreamEvent::ToolResult {
+                                                    tool_name,
+                                                    output,
+                                                };
+                                                yield Ok(Event::default().json_data(&result_event).unwrap());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             "stream_event" => {
                                 // Token-by-token streaming via stream_event
                                 // event.type = "content_block_delta", event.delta.text contains the token
@@ -900,7 +989,7 @@ pub async fn design_chat_stream(
                                 break;
                             }
                             _ => {
-                                // Other event types (system, assistant, etc.) - ignore
+                                // Other event types (system, etc.) - ignore
                             }
                         }
                     }

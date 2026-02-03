@@ -54,12 +54,81 @@ Vibe Kanban supports integration with [NHN Dooray](https://dooray.com), a projec
 - **Comment Integration**: Post comments to Dooray tasks from your workflow
 - **Tag & Project Filtering**: Filter and organize tasks by Dooray tags and projects
 
-### Setup
+### Prerequisites
 
-1. Go to **Settings** (gear icon in navbar)
-2. Open **Dooray Settings** tab
-3. Enter your Dooray API token and domain
-4. Select the project and tags to sync
+Before setting up Dooray integration, you need:
+
+1. **Dooray Account**: An active NHN Dooray account with project access
+2. **API Token**: A Dooray API token for authentication
+3. **Domain**: Your Dooray tenant domain (e.g., `your-company` from `your-company.dooray.com`)
+
+### Getting Your Dooray API Token
+
+1. Log in to your Dooray account
+2. Click your profile icon in the top-right corner
+3. Go to **Settings** → **API Token**
+4. Click **Generate Token** and copy the generated token
+5. Store this token securely - it won't be shown again
+
+> ⚠️ **Security Note**: Keep your API token private. Never commit it to version control or share it publicly.
+
+### Setup Guide
+
+#### Step 1: Open Dooray Settings
+
+1. Launch Vibe Kanban (`npx vibe-kanban` or `pnpm run dev`)
+2. Click the **Settings** icon (⚙️) in the navigation bar
+3. Navigate to the **Dooray** tab
+
+#### Step 2: Configure Connection
+
+1. **Domain**: Enter your Dooray domain (e.g., `your-company`)
+   - This is the subdomain part of your Dooray URL
+2. **API Token**: Paste your Dooray API token
+3. Click **Save** to verify the connection
+
+#### Step 3: Select Project
+
+1. After saving, a list of available projects will appear
+2. Select the project you want to sync with Vibe Kanban
+3. The project's tasks and tags will be loaded
+
+#### Step 4: Configure Tag Filters (Optional)
+
+1. Select specific tags to filter which tasks are synced
+2. Only tasks with the selected tags will appear in Vibe Kanban
+3. Leave empty to sync all tasks from the project
+
+### Usage
+
+#### Syncing Tasks from Dooray
+
+- Click the **Sync** button in the task panel to import tasks from Dooray
+- Tasks will be imported with their title, description, and status
+- Changes made in Vibe Kanban can be synced back to Dooray
+
+#### Creating Tasks in Dooray
+
+1. Click **Create Dooray Task** button
+2. Enter the task title and description
+3. (Optional) Use **AI Summary/Split** to:
+   - Summarize long descriptions
+   - Split large tasks into subtasks
+4. Click **Create** to save the task to Dooray
+
+#### Posting Comments
+
+- Select a task linked to Dooray
+- Use the comment feature to post updates directly to the Dooray task
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Invalid API Token" | Regenerate your token in Dooray settings |
+| "Project not found" | Check your domain and ensure you have project access |
+| "Failed to sync" | Verify your network connection and API token permissions |
+| Tasks not appearing | Check tag filter settings or try syncing again |
 
 ### AI-Powered Task Management
 
