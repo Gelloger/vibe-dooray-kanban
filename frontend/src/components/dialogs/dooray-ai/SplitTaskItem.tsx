@@ -4,7 +4,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronUp, Pencil, Eye } from 'lucide-react';
+import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import type { SplitTaskItemProps } from './types';
 
 export function SplitTaskItem({
@@ -16,6 +17,7 @@ export function SplitTaskItem({
 }: SplitTaskItemProps) {
   const { t } = useTranslation(['dooray', 'common']);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const handleTitleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,13 +62,55 @@ export function SplitTaskItem({
 
           {/* 설명 (접힘/펼침) */}
           {isExpanded && (
-            <Textarea
-              value={task.description}
-              onChange={handleDescriptionChange}
-              disabled={disabled || !task.selected}
-              placeholder={t('dooray:ai.splitTaskDescription', '태스크 설명 (선택)')}
-              className="min-h-[60px] text-sm resize-none"
-            />
+            <div className="space-y-2">
+              {/* 프리뷰/편집 토글 버튼 */}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setIsEditing(!isEditing)}
+                  disabled={disabled || !task.selected}
+                >
+                  {isEditing ? (
+                    <>
+                      <Eye className="h-3 w-3 mr-1" />
+                      {t('dooray:ai.preview', '미리보기')}
+                    </>
+                  ) : (
+                    <>
+                      <Pencil className="h-3 w-3 mr-1" />
+                      {t('dooray:ai.edit', '편집')}
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {isEditing ? (
+                <Textarea
+                  value={task.description}
+                  onChange={handleDescriptionChange}
+                  disabled={disabled || !task.selected}
+                  placeholder={t('dooray:ai.splitTaskDescription', '태스크 설명 (선택)')}
+                  className="min-h-[100px] text-sm resize-none font-mono"
+                />
+              ) : (
+                <div className="border rounded-md p-2 bg-muted/20 min-h-[60px]">
+                  {task.description ? (
+                    <WYSIWYGEditor
+                      value={task.description}
+                      disabled
+                      className="text-sm"
+                    />
+                  ) : (
+                    <p className="text-muted-foreground text-sm italic">
+                      {t('dooray:ai.noDescription', '설명 없음')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 

@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Split, Plus, AlertCircle, RotateCcw } from 'lucide-react';
+import WYSIWYGEditor from '@/components/ui/wysiwyg';
 import { SplitTaskItem } from './SplitTaskItem';
 import { useDesignChatStream } from '@/hooks/useDesignSession';
 import type { SplitTask, AiPanelState } from './types';
@@ -22,29 +23,97 @@ export interface AiSplitPanelProps {
 // Parse split response from AI
 function parseSplitResponse(content: string): { parentTitle?: string; tasks: Array<{ title: string; description: string }> } | null {
   try {
-    // Try to find JSON in the response
-    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[1]);
-      return {
-        parentTitle: parsed.parent_title || parsed.parentTitle,
-        tasks: parsed.tasks || [],
-      };
+    // Try to find the last JSON code block (AI outputs markdown first, then JSON)
+    const jsonMatches = content.match(/```json\s*([\s\S]*?)\s*```/g);
+    if (jsonMatches && jsonMatches.length > 0) {
+      // Use the last JSON block
+      const lastJsonBlock = jsonMatches[jsonMatches.length - 1];
+      const jsonContent = lastJsonBlock.replace(/```json\s*/, '').replace(/\s*```$/, '');
+
+      try {
+        const parsed = JSON.parse(jsonContent);
+        return {
+          parentTitle: parsed.parent_title || parsed.parentTitle,
+          tasks: parsed.tasks || [],
+        };
+      } catch {
+        // JSON might have unescaped newlines in strings, try to fix
+        const fixedJson = jsonContent
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+        const parsed = JSON.parse(fixedJson);
+        return {
+          parentTitle: parsed.parent_title || parsed.parentTitle,
+          tasks: parsed.tasks || [],
+        };
+      }
     }
 
-    // Try direct JSON parse
-    const jsonStartIndex = content.indexOf('{');
-    const jsonEndIndex = content.lastIndexOf('}');
-    if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
-      const jsonStr = content.slice(jsonStartIndex, jsonEndIndex + 1);
-      const parsed = JSON.parse(jsonStr);
-      return {
-        parentTitle: parsed.parent_title || parsed.parentTitle,
-        tasks: parsed.tasks || [],
-      };
+    // Try to find JSON object pattern with balanced braces
+    const jsonStartIndex = content.lastIndexOf('{"parent_title"');
+    if (jsonStartIndex === -1) {
+      // Try alternative key
+      const altStart = content.lastIndexOf('{"tasks"');
+      if (altStart !== -1) {
+        return extractJsonFromPosition(content, altStart);
+      }
+      return null;
     }
 
+    return extractJsonFromPosition(content, jsonStartIndex);
+  } catch (err) {
+    console.error('Failed to parse split response:', err, content);
     return null;
+  }
+}
+
+// Extract JSON from a specific position with balanced brace matching
+function extractJsonFromPosition(content: string, startIndex: number): { parentTitle?: string; tasks: Array<{ title: string; description: string }> } | null {
+  let braceCount = 0;
+  let endIndex = startIndex;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = startIndex; i < content.length; i++) {
+    const char = content[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') braceCount++;
+      if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          endIndex = i;
+          break;
+        }
+      }
+    }
+  }
+
+  if (braceCount !== 0) return null;
+
+  const jsonStr = content.slice(startIndex, endIndex + 1);
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return {
+      parentTitle: parsed.parent_title || parsed.parentTitle,
+      tasks: parsed.tasks || [],
+    };
   } catch {
     return null;
   }
@@ -124,28 +193,41 @@ export function AiSplitPanel({
     setError(null);
 
     try {
-      const prompt = `다음 태스크를 여러 개의 서브태스크로 분할해주세요. JSON 형식으로 응답해주세요:
+      const prompt = `다음 태스크를 여러 개의 서브태스크로 분할해주세요.
+
+## 분할할 태스크
+- **제목**: ${title}
+- **본문**: ${body}
+
+## 응답 형식
+먼저 분석 내용을 마크다운으로 작성하고, 마지막에 JSON 데이터를 제공해주세요.
+
+### 1단계: 분석 (마크다운)
+태스크를 분석하고 어떻게 분할할지 설명해주세요:
+- 전체 태스크의 목표
+- 분할 기준과 이유
+- 각 서브태스크 요약 (번호 목록으로)
+
+### 2단계: 구조화된 데이터 (JSON)
+분석이 끝나면 아래 형식의 JSON을 코드 블록으로 제공해주세요:
 
 \`\`\`json
 {
-  "parent_title": "상위 태스크 제목 (원본 제목 기반으로 간결하게)",
+  "parent_title": "상위 태스크 제목",
   "tasks": [
-    { "title": "서브태스크 1 제목", "description": "서브태스크 1의 상세 설명 (구체적인 작업 내용, 목표, 필요한 작업 등을 3-5문장으로)" },
-    { "title": "서브태스크 2 제목", "description": "서브태스크 2의 상세 설명" }
+    { "title": "서브태스크 제목", "description": "마크다운 형식의 상세 설명" }
   ]
 }
 \`\`\`
 
-분할 규칙:
+## 분할 규칙
 1. 각 서브태스크는 독립적으로 수행 가능해야 합니다
 2. 2-7개의 서브태스크로 분할
-3. **각 서브태스크의 description은 반드시 3-5문장 이상으로 상세하게 작성**
-4. description에는 해당 태스크에서 수행해야 할 구체적인 작업, 고려사항, 예상 결과물 등을 포함
-5. 원본 본문의 관련 내용을 각 서브태스크에 적절히 분배
-
-분할할 태스크:
-제목: ${title}
-본문: ${body}`;
+3. **각 서브태스크의 description은 마크다운 형식으로 작성**:
+   - 목표/개요를 먼저 작성
+   - 구체적인 작업 항목은 bullet point(\`-\`)로 나열
+   - 필요시 코드 예시나 참고사항 포함
+4. 원본 본문의 관련 내용을 각 서브태스크에 적절히 분배`;
 
       const result = await sendStreamingChat(prompt);
 
@@ -229,8 +311,12 @@ export function AiSplitPanel({
           {t('dooray:ai.splitting', '태스크를 분할하고 있습니다...')}
         </div>
         {streamingContent && (
-          <div className="p-3 border rounded-md bg-muted/30 text-sm">
-            <pre className="whitespace-pre-wrap">{streamingContent}</pre>
+          <div className="p-3 border rounded-md bg-muted/30 text-sm max-h-[300px] overflow-auto">
+            <WYSIWYGEditor
+              value={streamingContent}
+              disabled
+              className="whitespace-pre-wrap break-words"
+            />
           </div>
         )}
       </div>

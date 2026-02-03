@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { doorayApi } from '@/lib/api';
 import { Loader2, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
+import WYSIWYGEditor from '@/components/ui/wysiwyg';
 
 export interface UpdateDoorayBodyDialogProps {
   doorayTaskId: string;
@@ -79,7 +80,7 @@ const UpdateDoorayBodyDialogImpl = NiceModal.create<UpdateDoorayBodyDialogProps>
 
     return (
       <Dialog open={modal.visible} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('dooray:updateBody.title')}</DialogTitle>
           </DialogHeader>
@@ -124,11 +125,13 @@ const UpdateDoorayBodyDialogImpl = NiceModal.create<UpdateDoorayBodyDialogProps>
                 </Button>
               </div>
               {showPreview ? (
-                <div className="min-h-[300px] max-h-[400px] overflow-auto p-3 border rounded-md bg-muted/30 prose prose-sm dark:prose-invert max-w-none">
+                <div className="min-h-[400px] max-h-[500px] overflow-auto p-3 border rounded-md bg-muted/30">
                   {body ? (
-                    <pre className="whitespace-pre-wrap font-sans text-sm">
-                      {body}
-                    </pre>
+                    <WYSIWYGEditor
+                      value={body}
+                      disabled
+                      className="whitespace-pre-wrap break-words text-sm"
+                    />
                   ) : (
                     <p className="text-muted-foreground italic">
                       {t('dooray:createTask.noContent')}
@@ -142,7 +145,7 @@ const UpdateDoorayBodyDialogImpl = NiceModal.create<UpdateDoorayBodyDialogProps>
                   onChange={(e) => setBody(e.target.value)}
                   placeholder={t('dooray:updateBody.bodyPlaceholder')}
                   disabled={isUpdating}
-                  className="min-h-[300px] max-h-[400px] font-mono text-sm"
+                  className="min-h-[400px] max-h-[500px] font-mono text-sm"
                 />
               )}
               <p className="text-xs text-muted-foreground">
