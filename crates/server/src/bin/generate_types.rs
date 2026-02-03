@@ -147,6 +147,7 @@ fn generate_types_content() -> String {
         server::routes::tasks::DesignSessionWithMessages::decl(),
         server::routes::tasks::DesignChatRequest::decl(),
         server::routes::tasks::DesignChatResponse::decl(),
+        server::routes::tasks::DesignChatStreamEvent::decl(),
         server::routes::task_attempts::pr::CreatePrApiRequest::decl(),
         server::routes::images::ImageResponse::decl(),
         server::routes::images::ImageMetadata::decl(),

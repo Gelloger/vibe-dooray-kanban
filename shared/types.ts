@@ -362,6 +362,8 @@ export type DesignChatRequest = { message: string, };
 
 export type DesignChatResponse = { user_message: DesignMessage, assistant_message: DesignMessage, };
 
+export type DesignChatStreamEvent = { "type": "UserMessageSaved", "data": { message: DesignMessage, } } | { "type": "AssistantChunk", "data": { content: string, } } | { "type": "AssistantComplete", "data": { message: DesignMessage, } } | { "type": "ToolUse", "data": { tool_name: string, tool_input: JsonValue, } } | { "type": "ToolResult", "data": { tool_name: string, output: string, } } | { "type": "Error", "data": { message: string, } };
+
 export type CreatePrApiRequest = { title: string, body: string | null, target_branch: string | null, draft: boolean | null, repo_id: string, auto_generate_description: boolean, };
 
 export type ImageResponse = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };

@@ -27,5 +27,15 @@
     "selectOne": "하나 선택",
     "mandatoryTagRequired": "{{groupName}}에서 태그를 선택해주세요",
     "mandatoryTagsDescription": "두레이 프로젝트에서 필수로 요구하는 태그입니다"
+  },
+  "updateBody": {
+    "title": "두레이 본문 업데이트",
+    "bodyLabel": "본문",
+    "bodyPlaceholder": "태스크 본문을 입력하세요 (마크다운 지원)...",
+    "update": "업데이트",
+    "updating": "업데이트 중...",
+    "success": "두레이 태스크 본문이 업데이트되었습니다",
+    "failed": "본문 업데이트 실패",
+    "syncButton": "두레이 본문 동기화"
   }
 }
