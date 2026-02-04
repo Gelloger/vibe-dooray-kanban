@@ -103,6 +103,7 @@ import {
   SyncRequest,
   CreateDoorayCommentRequest,
   CreateDoorayCommentResult,
+  GetDoorayCommentsResponse,
   CreateDoorayTaskRequest,
   CreateDoorayTaskResult,
   SyncResult,
@@ -1736,6 +1737,16 @@ export const doorayApi = {
       body: JSON.stringify(data),
     });
     return handleApiResponse<CreateDoorayCommentResult>(response);
+  },
+
+  /**
+   * Get comments from a Dooray task
+   */
+  getComments: async (doorayProjectId: string, doorayTaskId: string): Promise<GetDoorayCommentsResponse> => {
+    const response = await makeRequest(
+      `/api/dooray/projects/${doorayProjectId}/tasks/${doorayTaskId}/comments`
+    );
+    return handleApiResponse<GetDoorayCommentsResponse>(response);
   },
 
   /**

@@ -31,6 +31,7 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/dooray/import-by-number", post(import_by_number))
         .route("/dooray/import-by-id", post(import_by_id))
         .route("/dooray/comment", post(create_dooray_comment))
+        .route("/dooray/projects/{dooray_project_id}/tasks/{dooray_task_id}/comments", get(get_dooray_comments))
         .route("/dooray/tasks", post(create_dooray_task))
         .route("/dooray/tasks/{dooray_task_id}", put(update_dooray_task))
 }
@@ -871,6 +872,163 @@ async fn create_dooray_comment(
     Ok(ResponseJson(ApiResponse::success(CreateDoorayCommentResult {
         success: true,
         message: "두레이에 기록되었습니다.".to_string(),
+    })))
+}
+
+// ============== Get Dooray Comments Endpoint ==============
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct DoorayComment {
+    pub id: String,
+    pub author_name: String,
+    pub content: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct GetDoorayCommentsResponse {
+    pub comments: Vec<DoorayComment>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayLogsApiResponse {
+    result: Option<Vec<DoorayLogItem>>,
+    #[allow(dead_code)]
+    header: DoorayApiHeader,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayLogItem {
+    id: String,
+    #[serde(rename = "createdAt")]
+    created_at: Option<String>,
+    body: Option<DoorayLogBody>,
+    #[serde(rename = "creatorMember")]
+    creator_member: Option<DoorayLogCreator>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayLogBody {
+    content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayLogCreator {
+    name: Option<String>,
+    #[serde(rename = "organizationMemberId")]
+    organization_member_id: Option<String>,
+}
+
+// Member list API response types
+#[derive(Debug, Deserialize)]
+struct DoorayMembersApiResponse {
+    result: Option<Vec<DoorayProjectMember>>,
+    #[allow(dead_code)]
+    header: DoorayApiHeader,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayProjectMember {
+    #[serde(rename = "organizationMemberId")]
+    organization_member_id: Option<String>,
+    member: Option<DoorayMemberInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayMemberInfo {
+    name: Option<String>,
+}
+
+async fn get_dooray_comments(
+    State(deployment): State<DeploymentImpl>,
+    axum::extract::Path((dooray_project_id, dooray_task_id)): axum::extract::Path<(String, String)>,
+) -> Result<ResponseJson<ApiResponse<GetDoorayCommentsResponse>>, ApiError> {
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    // First, fetch project members to build ID -> name mapping
+    let member_names: std::collections::HashMap<String, String> = match client
+        .get(format!(
+            "{}/project/v1/projects/{}/members?size=100",
+            DOORAY_API_BASE, dooray_project_id
+        ))
+        .send()
+        .await
+    {
+        Ok(response) => {
+            response
+                .json::<DoorayMembersApiResponse>()
+                .await
+                .ok()
+                .and_then(|r| r.result)
+                .map(|members| {
+                    members
+                        .into_iter()
+                        .filter_map(|m| {
+                            let id = m.organization_member_id?;
+                            let name = m.member.and_then(|mi| mi.name)?;
+                            Some((id, name))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        Err(_) => std::collections::HashMap::new(),
+    };
+
+    // Dooray API: GET /project/v1/projects/{projectId}/posts/{postId}/logs
+    let response = client
+        .get(format!(
+            "{}/project/v1/projects/{}/posts/{}/logs",
+            DOORAY_API_BASE, dooray_project_id, dooray_task_id
+        ))
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Ok(ResponseJson(ApiResponse::success(GetDoorayCommentsResponse {
+            comments: vec![],
+        })));
+    }
+
+    let api_response: DoorayLogsApiResponse = response
+        .json()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to parse Dooray response: {}", e)))?;
+
+    let comments = api_response
+        .result
+        .unwrap_or_default()
+        .into_iter()
+        .map(|log| {
+            // Try to get name from: 1) log.creator_member.name, 2) member_names lookup, 3) "Unknown"
+            let author_name = log.creator_member
+                .as_ref()
+                .and_then(|c| c.name.clone())
+                .or_else(|| {
+                    log.creator_member
+                        .as_ref()
+                        .and_then(|c| c.organization_member_id.as_ref())
+                        .and_then(|id| member_names.get(id).cloned())
+                })
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            DoorayComment {
+                id: log.id,
+                author_name,
+                content: log.body
+                    .and_then(|b| b.content)
+                    .unwrap_or_default(),
+                created_at: log.created_at.unwrap_or_default(),
+            }
+        })
+        .collect();
+
+    Ok(ResponseJson(ApiResponse::success(GetDoorayCommentsResponse {
+        comments,
     })))
 }
 

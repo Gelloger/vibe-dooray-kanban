@@ -53,6 +53,8 @@ fn generate_types_content() -> String {
         server::routes::dooray::ImportResult::decl(),
         server::routes::dooray::CreateDoorayCommentRequest::decl(),
         server::routes::dooray::CreateDoorayCommentResult::decl(),
+        server::routes::dooray::DoorayComment::decl(),
+        server::routes::dooray::GetDoorayCommentsResponse::decl(),
         server::routes::dooray::CreateDoorayTaskRequest::decl(),
         server::routes::dooray::CreateDoorayTaskResult::decl(),
         db::models::scratch::DraftFollowUpData::decl(),
