@@ -112,6 +112,10 @@ export type CreateDoorayCommentRequest = { dooray_task_id: string, dooray_projec
 
 export type CreateDoorayCommentResult = { success: boolean, message: string, };
 
+export type DoorayComment = { id: string, author_name: string, content: string, created_at: string, };
+
+export type GetDoorayCommentsResponse = { comments: Array<DoorayComment>, };
+
 export type CreateDoorayTaskRequest = { dooray_project_id: string, subject: string, body: string | null, local_project_id: string, tag_ids: Array<string> | null, 
 /**
  * Parent task ID for creating subtasks

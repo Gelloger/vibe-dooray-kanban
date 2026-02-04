@@ -340,6 +340,36 @@ export function useDoorayCreateComment() {
 }
 
 /**
+ * Hook for fetching comments from a Dooray task
+ */
+export function useDoorayComments(
+  doorayProjectId: string | null | undefined,
+  doorayTaskId: string | null | undefined,
+  enabled: boolean = false
+) {
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['dooray', 'comments', doorayProjectId, doorayTaskId],
+    queryFn: () => doorayApi.getComments(doorayProjectId!, doorayTaskId!),
+    enabled: enabled && !!doorayProjectId && !!doorayTaskId,
+    staleTime: 30000, // 30 seconds
+  });
+
+  return {
+    comments: data?.comments ?? [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  };
+}
+
+/**
  * Hook for creating a Dooray task and syncing to local kanban
  */
 export function useCreateDoorayTask() {

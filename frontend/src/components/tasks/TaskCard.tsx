@@ -9,6 +9,7 @@ import { useDooraySettings } from '@/hooks/useDooray';
 import { paths } from '@/lib/paths';
 import { attemptsApi } from '@/lib/api';
 import { TaskCardHeader } from './TaskCardHeader';
+import { DoorayCommentsSection } from './DoorayCommentsSection';
 import { useTranslation } from 'react-i18next';
 import { CreateAttemptDialog } from '@/components/dialogs';
 
@@ -158,6 +159,13 @@ export function TaskCard({
               ? `${task.description.substring(0, 130)}...`
               : task.description}
           </p>
+        )}
+        {task.dooray_task_id && task.dooray_project_id && (
+          <DoorayCommentsSection
+            doorayProjectId={task.dooray_project_id}
+            doorayTaskId={task.dooray_task_id}
+            taskTitle={task.title}
+          />
         )}
       </div>
     </KanbanCard>
