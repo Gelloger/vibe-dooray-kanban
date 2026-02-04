@@ -894,11 +894,24 @@ pub async fn design_chat_stream(
                     if let Ok(envelope) = serde_json::from_str::<cli_protocol::SdkEventEnvelope>(trimmed) {
                         match envelope.type_.as_str() {
                             "assistant" => {
-                                // Handle tool_use blocks in assistant messages
+                                // Handle text and tool_use blocks in assistant messages
                                 if let Some(message) = envelope.properties.get("message") {
                                     if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
                                         for block in content {
-                                            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                                            let block_type = block.get("type").and_then(|t| t.as_str());
+
+                                            if block_type == Some("text") {
+                                                // Extract text content from assistant message
+                                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                                    if !text.is_empty() && !full_response.contains(text) {
+                                                        let chunk_event = DesignChatStreamEvent::AssistantChunk {
+                                                            content: text.to_string(),
+                                                        };
+                                                        yield Ok(Event::default().json_data(&chunk_event).unwrap());
+                                                        full_response.push_str(text);
+                                                    }
+                                                }
+                                            } else if block_type == Some("tool_use") {
                                                 let tool_name = block.get("name")
                                                     .and_then(|n| n.as_str())
                                                     .unwrap_or("unknown")

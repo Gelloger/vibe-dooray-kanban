@@ -49,6 +49,7 @@ fn generate_types_content() -> String {
         server::routes::dooray::SyncRequest::decl(),
         server::routes::dooray::SyncResult::decl(),
         server::routes::dooray::ImportByNumberRequest::decl(),
+        server::routes::dooray::ImportByIdRequest::decl(),
         server::routes::dooray::ImportResult::decl(),
         server::routes::dooray::CreateDoorayCommentRequest::decl(),
         server::routes::dooray::CreateDoorayCommentResult::decl(),

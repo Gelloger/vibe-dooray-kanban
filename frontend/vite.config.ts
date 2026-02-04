@@ -116,6 +116,19 @@ export default defineConfig({
         target: `http://localhost:${process.env.BACKEND_PORT || '3001'}`,
         changeOrigin: true,
         ws: true,
+        // Increase timeout for SSE streaming endpoints
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            // Set longer timeout for streaming endpoints
+            if (req.url?.includes('/stream')) {
+              proxyReq.setTimeout(300000); // 5 minutes
+            }
+          });
+          proxy.on('proxyRes', (proxyRes) => {
+            // Disable buffering for SSE
+            proxyRes.headers['x-accel-buffering'] = 'no';
+          });
+        },
       },
     },
     fs: {

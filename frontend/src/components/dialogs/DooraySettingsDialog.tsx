@@ -22,10 +22,80 @@ import {
   useUpdateDoorayTags,
   useUpdateDoorayProject,
   useDoorayImportByNumber,
+  useDoorayImportById,
 } from '@/hooks/useDooray';
 import type { SyncResult, ImportResult } from 'shared/types';
 
 type Step = 'token' | 'project' | 'connected' | 'tags';
+
+// Parse Dooray URL to extract project ID and task ID
+// Supported formats:
+// - https://{domain}.dooray.com/project/{projectId}/posts/{postId}
+// - https://{domain}.dooray.com/task/{projectCode}/{taskNumber}
+type ParsedDoorayUrl =
+  | { type: 'postId'; projectId: string; postId: string }
+  | { type: 'taskNumber'; projectCode: string; taskNumber: number }
+  | null;
+
+function parseDoorayUrl(input: string): ParsedDoorayUrl {
+  const trimmed = input.trim();
+
+  // Check if it's a URL
+  if (!trimmed.includes('dooray.com')) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const pathParts = url.pathname.split('/').filter(Boolean);
+
+    // Format: /project/tasks/{postId} (common Dooray URL format)
+    if (pathParts.length >= 3 && pathParts[0] === 'project' && pathParts[1] === 'tasks') {
+      return {
+        type: 'postId',
+        projectId: '', // Will need to be filled from settings
+        postId: pathParts[2],
+      };
+    }
+
+    // Format: /project/{projectId}/posts/{postId}
+    if (pathParts.length >= 4 && pathParts[0] === 'project' && pathParts[2] === 'posts') {
+      return {
+        type: 'postId',
+        projectId: pathParts[1],
+        postId: pathParts[3],
+      };
+    }
+
+    // Format: /task/{projectCode}/{taskNumber}
+    if (pathParts.length >= 3 && pathParts[0] === 'task') {
+      const taskNumber = parseInt(pathParts[2], 10);
+      if (!isNaN(taskNumber)) {
+        return {
+          type: 'taskNumber',
+          projectCode: pathParts[1],
+          taskNumber,
+        };
+      }
+    }
+
+    // Format: /{projectCode}/{taskNumber} (simple format)
+    if (pathParts.length >= 2) {
+      const taskNumber = parseInt(pathParts[1], 10);
+      if (!isNaN(taskNumber)) {
+        return {
+          type: 'taskNumber',
+          projectCode: pathParts[0],
+          taskNumber,
+        };
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export interface DooraySettingsDialogProps {
   projectId?: string; // Local vibe-kanban project ID for sync
@@ -59,7 +129,9 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
     const { tagGroups, isLoading: isLoadingTags } = useDoorayTags(settings?.selected_project_id || null);
     const { updateSelectedTags, isUpdating: isUpdatingTags } = useUpdateDoorayTags();
     const { updateSelectedProject, isUpdating: isUpdatingProject } = useUpdateDoorayProject();
-    const { importByNumber, isImporting } = useDoorayImportByNumber();
+    const { importByNumber, isImporting: isImportingByNumber } = useDoorayImportByNumber();
+    const { importById, isImporting: isImportingById } = useDoorayImportById();
+    const isImporting = isImportingByNumber || isImportingById;
     const { projects, isLoading: isLoadingProjects } = useDoorayProjects(isConnected);
 
     const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -203,19 +275,58 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
       if (!taskNumber.trim() || !settings?.selected_project_id || !settings?.selected_project_name || !projectId) return;
       setImportResult(null);
 
+      const input = taskNumber.trim();
+      const parsedUrl = parseDoorayUrl(input);
+
       try {
-        const result = await importByNumber({
-          project_id: projectId,
-          dooray_project_id: settings.selected_project_id,
-          dooray_project_code: settings.selected_project_name,
-          task_number: BigInt(parseInt(taskNumber, 10)),
-        });
+        let result: ImportResult;
+
+        if (parsedUrl) {
+          // Input is a Dooray URL
+          if (parsedUrl.type === 'postId') {
+            // Import by post ID directly
+            // Use projectId from URL if available, otherwise use settings
+            const doorayProjectId = parsedUrl.projectId || settings.selected_project_id;
+            result = await importById({
+              project_id: projectId,
+              dooray_project_id: doorayProjectId,
+              dooray_project_code: settings.selected_project_name,
+              dooray_task_id: parsedUrl.postId,
+            });
+          } else {
+            // Import by task number extracted from URL
+            result = await importByNumber({
+              project_id: projectId,
+              dooray_project_id: settings.selected_project_id,
+              dooray_project_code: parsedUrl.projectCode,
+              task_number: BigInt(parsedUrl.taskNumber),
+            });
+          }
+        } else {
+          // Input is a plain task number
+          const num = parseInt(input, 10);
+          if (isNaN(num)) {
+            setImportResult({
+              success: false,
+              task_id: null,
+              message: '올바른 문서번호 또는 Dooray 링크를 입력해주세요.',
+            });
+            return;
+          }
+          result = await importByNumber({
+            project_id: projectId,
+            dooray_project_id: settings.selected_project_id,
+            dooray_project_code: settings.selected_project_name,
+            task_number: BigInt(num),
+          });
+        }
+
         setImportResult(result);
         if (result.success) {
           setTaskNumber('');
         }
       } catch (err) {
-        console.error('Failed to import task by number:', err);
+        console.error('Failed to import task:', err);
         setImportResult({
           success: false,
           task_id: null,
@@ -435,15 +546,15 @@ const DooraySettingsDialogImpl = NiceModal.create<DooraySettingsDialogProps>(
               </Button>
             </div>
 
-            {/* Import by Task Number */}
+            {/* Import by Task Number or URL */}
             {projectId && (
               <div className="space-y-2">
-                <Label htmlFor="task-number">문서번호로 가져오기</Label>
+                <Label htmlFor="task-number">문서번호 또는 링크로 가져오기</Label>
                 <div className="flex gap-2">
                   <Input
                     id="task-number"
-                    type="number"
-                    placeholder="예: 12345"
+                    type="text"
+                    placeholder="예: 12345 또는 Dooray 링크"
                     value={taskNumber}
                     onChange={(e) => setTaskNumber(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleImportByNumber()}
