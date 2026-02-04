@@ -9,6 +9,7 @@ import type {
   SyncRequest,
   SyncResult,
   ImportByNumberRequest,
+  ImportByIdRequest,
   ImportResult,
   CreateDoorayCommentRequest,
   CreateDoorayTaskRequest,
@@ -253,6 +254,37 @@ export function useDoorayImportByNumber() {
 
   return {
     importByNumber,
+    isImporting,
+    isError,
+    error,
+    lastImportResult,
+  };
+}
+
+/**
+ * Hook for importing a single Dooray task by task ID (from URL)
+ */
+export function useDoorayImportById() {
+  const queryClient = useQueryClient();
+
+  const {
+    mutateAsync: importById,
+    isPending: isImporting,
+    isError,
+    error,
+    data: lastImportResult,
+  } = useMutation({
+    mutationFn: (data: ImportByIdRequest) => doorayApi.importById(data),
+    onSuccess: (result, variables) => {
+      if (result.success && result.task_id) {
+        // Invalidate local tasks to show imported item
+        queryClient.invalidateQueries({ queryKey: ['tasks', variables.project_id] });
+      }
+    },
+  });
+
+  return {
+    importById,
     isImporting,
     isError,
     error,

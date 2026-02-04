@@ -104,6 +104,8 @@ export type SyncResult = { created: number, updated: number, skipped: number, };
 
 export type ImportByNumberRequest = { project_id: string, dooray_project_id: string, dooray_project_code: string, task_number: bigint, };
 
+export type ImportByIdRequest = { project_id: string, dooray_project_id: string, dooray_project_code: string, dooray_task_id: string, };
+
 export type ImportResult = { success: boolean, task_id: string | null, message: string, };
 
 export type CreateDoorayCommentRequest = { dooray_task_id: string, dooray_project_id: string, content: string, };

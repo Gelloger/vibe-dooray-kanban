@@ -107,6 +107,7 @@ import {
   CreateDoorayTaskResult,
   SyncResult,
   ImportByNumberRequest,
+  ImportByIdRequest,
   ImportResult,
   DesignMessage,
   AddDesignMessageRequest,
@@ -1711,6 +1712,17 @@ export const doorayApi = {
     const response = await makeRequest('/api/dooray/import-by-number', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+    return handleApiResponse<ImportResult>(response);
+  },
+
+  /**
+   * Import a single Dooray task by its post ID (from URL)
+   */
+  importById: async (data: ImportByIdRequest): Promise<ImportResult> => {
+    const response = await makeRequest('/api/dooray/import-by-id', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
     return handleApiResponse<ImportResult>(response);
   },

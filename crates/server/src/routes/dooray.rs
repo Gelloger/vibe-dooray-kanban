@@ -29,6 +29,7 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/dooray/projects/{dooray_project_id}/tags", get(get_dooray_tags))
         .route("/dooray/sync", post(sync_dooray_tasks))
         .route("/dooray/import-by-number", post(import_by_number))
+        .route("/dooray/import-by-id", post(import_by_id))
         .route("/dooray/comment", post(create_dooray_comment))
         .route("/dooray/tasks", post(create_dooray_task))
         .route("/dooray/tasks/{dooray_task_id}", put(update_dooray_task))
@@ -460,6 +461,14 @@ pub struct ImportByNumberRequest {
     pub task_number: i64,  // The task number to import
 }
 
+#[derive(Debug, Deserialize, TS)]
+pub struct ImportByIdRequest {
+    pub project_id: Uuid,  // Local vibe-kanban project ID
+    pub dooray_project_id: String,
+    pub dooray_project_code: String,  // For task number formatting
+    pub dooray_task_id: String,  // The Dooray post ID to import directly
+}
+
 #[derive(Debug, Serialize, TS)]
 pub struct ImportResult {
     pub success: bool,
@@ -724,6 +733,95 @@ async fn import_by_number(
         parent_workspace_id: None,
         image_ids: None,
         dooray_task_id: Some(dooray_task.id.clone()),
+        dooray_project_id: Some(payload.dooray_project_id.clone()),
+        dooray_task_number: Some(task_number),
+    };
+
+    let task_id = Uuid::new_v4();
+    Task::create(&deployment.db().pool, &create_data, task_id).await?;
+
+    Ok(ResponseJson(ApiResponse::success(ImportResult {
+        success: true,
+        task_id: Some(task_id),
+        message: "태스크를 가져왔습니다.".to_string(),
+    })))
+}
+
+// ============== Import by Task ID Endpoint ==============
+
+async fn import_by_id(
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<ImportByIdRequest>,
+) -> Result<ResponseJson<ApiResponse<ImportResult>>, ApiError> {
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    // Check if task already exists locally
+    let existing = Task::find_by_dooray_task_id(&deployment.db().pool, &payload.dooray_task_id).await?;
+
+    if let Some(existing_task) = existing {
+        return Ok(ResponseJson(ApiResponse::success(ImportResult {
+            success: true,
+            task_id: Some(existing_task.id),
+            message: "이미 동기화된 태스크입니다.".to_string(),
+        })));
+    }
+
+    // Fetch task detail directly by ID
+    let detail_response = client
+        .get(format!(
+            "{}/project/v1/projects/{}/posts/{}",
+            DOORAY_API_BASE, payload.dooray_project_id, payload.dooray_task_id
+        ))
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to fetch task detail: {}", e)))?;
+
+    if !detail_response.status().is_success() {
+        return Ok(ResponseJson(ApiResponse::success(ImportResult {
+            success: false,
+            task_id: None,
+            message: "해당 태스크를 찾을 수 없습니다.".to_string(),
+        })));
+    }
+
+    let detail: DoorayTaskDetailResponse = detail_response
+        .json()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to parse Dooray response: {}", e)))?;
+
+    let task_detail = match detail.result {
+        Some(d) => d,
+        None => {
+            return Ok(ResponseJson(ApiResponse::success(ImportResult {
+                success: false,
+                task_id: None,
+                message: "태스크 정보를 가져올 수 없습니다.".to_string(),
+            })));
+        }
+    };
+
+    let description = task_detail.body.and_then(|b| b.content);
+    let task_number = match task_detail.number {
+        Some(num) => format!("{}/{}", payload.dooray_project_code, num),
+        None => format!("{}/{}", payload.dooray_project_code, payload.dooray_task_id),
+    };
+
+    let status = match task_detail.workflow_class.as_deref() {
+        Some("working") => TaskStatus::InProgress,
+        Some("registered") => TaskStatus::Todo,
+        Some("backlog") => TaskStatus::Todo,
+        _ => TaskStatus::Todo,
+    };
+
+    let create_data = CreateTask {
+        project_id: payload.project_id,
+        title: task_detail.subject,
+        description,
+        status: Some(status),
+        parent_workspace_id: None,
+        image_ids: None,
+        dooray_task_id: Some(payload.dooray_task_id.clone()),
         dooray_project_id: Some(payload.dooray_project_id.clone()),
         dooray_task_number: Some(task_number),
     };

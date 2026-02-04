@@ -66,7 +66,7 @@ export function AiSummaryPanel({
   const [applyMode, setApplyMode] = useState<SummaryApplyMode>('replace');
   const [error, setError] = useState<string | null>(null);
 
-  const { sendStreamingChat, isStreaming, streamingContent } = useDesignChatStream(taskId);
+  const { sendStreamingChat, isStreaming, streamingContent, error: streamError } = useDesignChatStream(taskId);
 
   const handleSummarize = useCallback(async () => {
     if (!body.trim() || body.trim().length < 20) {
@@ -82,6 +82,12 @@ export function AiSummaryPanel({
     setState('loading');
     setError(null);
 
+    // Limit body length to prevent request size issues
+    const MAX_BODY_LENGTH = 8000;
+    const truncatedBody = body.length > MAX_BODY_LENGTH
+      ? body.slice(0, MAX_BODY_LENGTH) + '\n\n... (내용이 너무 길어 일부만 포함됨)'
+      : body;
+
     try {
       const prompt = `다음 텍스트를 요약해주세요. JSON 형식으로 응답해주세요:
 
@@ -93,12 +99,13 @@ export function AiSummaryPanel({
 \`\`\`
 
 요약할 텍스트:
-${body}`;
+${truncatedBody}`;
 
       const result = await sendStreamingChat(prompt);
 
       if (!result) {
-        throw new Error(t('dooray:ai.noResponse', 'AI 응답이 없습니다.'));
+        // Use stream error message if available, otherwise use default
+        throw new Error(streamError || t('dooray:ai.noResponse', 'AI 응답이 없습니다.'));
       }
 
       const parsed = parseSummaryResponse(result.assistantMessage.content);

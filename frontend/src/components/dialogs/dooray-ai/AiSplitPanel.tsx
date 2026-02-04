@@ -23,45 +23,37 @@ export interface AiSplitPanelProps {
 // Parse split response from AI
 function parseSplitResponse(content: string): { parentTitle?: string; tasks: Array<{ title: string; description: string }> } | null {
   try {
-    // Try to find the last JSON code block (AI outputs markdown first, then JSON)
-    const jsonMatches = content.match(/```json\s*([\s\S]*?)\s*```/g);
-    if (jsonMatches && jsonMatches.length > 0) {
-      // Use the last JSON block
-      const lastJsonBlock = jsonMatches[jsonMatches.length - 1];
-      const jsonContent = lastJsonBlock.replace(/```json\s*/, '').replace(/\s*```$/, '');
+    // Find the last ```json block by searching from the end
+    // We need to handle nested code blocks inside JSON (e.g., ```java inside description)
+    const lastJsonStart = content.lastIndexOf('```json');
+    if (lastJsonStart !== -1) {
+      // Find the matching closing ``` by using balanced brace matching
+      const afterJsonTag = content.slice(lastJsonStart + 7); // Skip "```json"
 
-      try {
-        const parsed = JSON.parse(jsonContent);
-        return {
-          parentTitle: parsed.parent_title || parsed.parentTitle,
-          tasks: parsed.tasks || [],
-        };
-      } catch {
-        // JSON might have unescaped newlines in strings, try to fix
-        const fixedJson = jsonContent
-          .replace(/\n/g, '\\n')
-          .replace(/\r/g, '\\r')
-          .replace(/\t/g, '\\t');
-        const parsed = JSON.parse(fixedJson);
-        return {
-          parentTitle: parsed.parent_title || parsed.parentTitle,
-          tasks: parsed.tasks || [],
-        };
+      // Find where the JSON object starts
+      const jsonObjStart = afterJsonTag.indexOf('{');
+      if (jsonObjStart !== -1) {
+        const jsonStartPos = lastJsonStart + 7 + jsonObjStart;
+        const extracted = extractJsonFromPosition(content, jsonStartPos);
+        if (extracted) {
+          return extracted;
+        }
       }
     }
 
-    // Try to find JSON object pattern with balanced braces
+    // Fallback: Try to find JSON object pattern with balanced braces
     const jsonStartIndex = content.lastIndexOf('{"parent_title"');
-    if (jsonStartIndex === -1) {
-      // Try alternative key
-      const altStart = content.lastIndexOf('{"tasks"');
-      if (altStart !== -1) {
-        return extractJsonFromPosition(content, altStart);
-      }
-      return null;
+    if (jsonStartIndex !== -1) {
+      return extractJsonFromPosition(content, jsonStartIndex);
     }
 
-    return extractJsonFromPosition(content, jsonStartIndex);
+    // Try alternative key
+    const altStart = content.lastIndexOf('{"tasks"');
+    if (altStart !== -1) {
+      return extractJsonFromPosition(content, altStart);
+    }
+
+    return null;
   } catch (err) {
     console.error('Failed to parse split response:', err, content);
     return null;
@@ -132,7 +124,7 @@ export function AiSplitPanel({
   const [state, setState] = useState<AiPanelState>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  const { sendStreamingChat, isStreaming, streamingContent } = useDesignChatStream(taskId);
+  const { sendStreamingChat, isStreaming, streamingContent, error: streamError } = useDesignChatStream(taskId);
 
   // 전체 선택/해제
   const allSelected = splitTasks.length > 0 && splitTasks.every((t) => t.selected);
@@ -192,12 +184,18 @@ export function AiSplitPanel({
     setState('loading');
     setError(null);
 
+    // Limit body length to prevent request size issues
+    const MAX_BODY_LENGTH = 8000;
+    const truncatedBody = body.length > MAX_BODY_LENGTH
+      ? body.slice(0, MAX_BODY_LENGTH) + '\n\n... (내용이 너무 길어 일부만 포함됨)'
+      : body;
+
     try {
       const prompt = `다음 태스크를 여러 개의 서브태스크로 분할해주세요.
 
 ## 분할할 태스크
 - **제목**: ${title}
-- **본문**: ${body}
+- **본문**: ${truncatedBody}
 
 ## 응답 형식
 먼저 분석 내용을 마크다운으로 작성하고, 마지막에 JSON 데이터를 제공해주세요.
@@ -232,12 +230,17 @@ export function AiSplitPanel({
       const result = await sendStreamingChat(prompt);
 
       if (!result) {
-        throw new Error(t('dooray:ai.noResponse', 'AI 응답이 없습니다.'));
+        // Use stream error message if available, otherwise use default
+        throw new Error(streamError || t('dooray:ai.noResponse', 'AI 응답이 없습니다.'));
       }
+
+      // Debug: log AI response
+      console.log('AI Split Response:', result.assistantMessage.content);
 
       const parsed = parseSplitResponse(result.assistantMessage.content);
       if (!parsed) {
-        throw new Error(t('dooray:ai.parseError', '응답을 파싱할 수 없습니다.'));
+        console.error('Failed to parse split response, content:', result.assistantMessage.content);
+        throw new Error(t('dooray:ai.parseError', '응답을 파싱할 수 없습니다. JSON 형식을 찾을 수 없습니다.'));
       }
 
       // 부모 제목 업데이트
@@ -254,7 +257,8 @@ export function AiSplitPanel({
       }));
 
       if (newTasks.length === 0) {
-        throw new Error(t('dooray:ai.noSplitResult', '분할 결과가 없습니다.'));
+        console.error('No tasks in parsed result:', parsed);
+        throw new Error(t('dooray:ai.noSplitResult', '분할 결과가 없습니다. AI 응답에서 tasks를 찾을 수 없습니다.'));
       }
 
       if (newTasks.length === 1) {
