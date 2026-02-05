@@ -4,8 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, Sparkles, AlertCircle, RotateCcw } from 'lucide-react';
 import { useDesignChatStream } from '@/hooks/useDesignSession';
+import { useDoorayTemplates, useDoorayTemplate } from '@/hooks/useDooray';
 import type { SummaryResult, SummaryApplyMode, AiPanelState } from './types';
 
 export interface AiSummaryPanelProps {
@@ -13,6 +21,7 @@ export interface AiSummaryPanelProps {
   body: string;
   onApply: (summary: string, mode: SummaryApplyMode) => void;
   disabled?: boolean;
+  doorayProjectId?: string | null;
 }
 
 // Parse summary response from AI
@@ -59,14 +68,18 @@ export function AiSummaryPanel({
   body,
   onApply,
   disabled = false,
+  doorayProjectId,
 }: AiSummaryPanelProps) {
   const { t } = useTranslation(['dooray', 'common']);
   const [state, setState] = useState<AiPanelState>('idle');
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [applyMode, setApplyMode] = useState<SummaryApplyMode>('replace');
   const [error, setError] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
   const { sendStreamingChat, isStreaming, streamingContent, error: streamError } = useDesignChatStream(taskId);
+  const { templates, isLoading: isLoadingTemplates } = useDoorayTemplates(doorayProjectId ?? null);
+  const { template: selectedTemplate } = useDoorayTemplate(doorayProjectId ?? null, selectedTemplateId);
 
   const handleSummarize = useCallback(async () => {
     if (!body.trim() || body.trim().length < 20) {
@@ -89,7 +102,37 @@ export function AiSummaryPanel({
       : body;
 
     try {
-      const prompt = `다음 텍스트를 요약해주세요. JSON 형식으로 응답해주세요:
+      let prompt: string;
+
+      if (selectedTemplate?.body?.content) {
+        // 템플릿 기반 요약
+        prompt = `당신은 문서 작성 전문가입니다. 아래 원본 내용을 분석하여 주어진 템플릿의 각 항목을 채워주세요.
+
+## 작성해야 할 템플릿
+\`\`\`
+${selectedTemplate.body.content}
+\`\`\`
+
+## 원본 내용 (이 내용을 기반으로 템플릿을 작성)
+${truncatedBody}
+
+## 작성 지침
+1. 템플릿의 구조와 형식을 그대로 유지하세요
+2. 템플릿의 각 섹션/항목을 원본 내용에서 추출한 정보로 채우세요
+3. 원본에 해당 정보가 없는 항목은 "[정보 없음]"으로 표시하세요
+4. 마크다운 형식을 유지하세요
+
+## 출력 형식
+JSON 형식으로 응답해주세요:
+\`\`\`json
+{
+  "summary": "템플릿 구조를 유지하면서 내용이 채워진 완성된 문서 (마크다운)",
+  "key_points": ["원본에서 추출한 핵심 포인트 1", "핵심 포인트 2", ...]
+}
+\`\`\``;
+      } else {
+        // 기본 요약 (기존 로직)
+        prompt = `다음 텍스트를 요약해주세요. JSON 형식으로 응답해주세요:
 
 \`\`\`json
 {
@@ -100,6 +143,7 @@ export function AiSummaryPanel({
 
 요약할 텍스트:
 ${truncatedBody}`;
+      }
 
       const result = await sendStreamingChat(prompt);
 
@@ -119,7 +163,7 @@ ${truncatedBody}`;
       setState('error');
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [body, taskId, sendStreamingChat, t]);
+  }, [body, taskId, sendStreamingChat, t, selectedTemplate]);
 
   const handleApply = useCallback(() => {
     if (!summary) return;
@@ -136,6 +180,34 @@ ${truncatedBody}`;
   if (state === 'idle') {
     return (
       <div className="space-y-3">
+        {/* 템플릿 선택 */}
+        {doorayProjectId && (
+          <div className="space-y-2">
+            <Label className="text-sm">
+              {t('dooray:ai.templateSelect', '템플릿 선택 (선택사항)')}
+            </Label>
+            <Select
+              value={selectedTemplateId ?? 'none'}
+              onValueChange={(value) => setSelectedTemplateId(value === 'none' ? null : value)}
+              disabled={disabled || isLoadingTemplates}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t('dooray:ai.selectTemplate', '템플릿 없음 (기본 요약)')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">
+                  {t('dooray:ai.noTemplate', '템플릿 없음 (기본 요약)')}
+                </SelectItem>
+                {templates.map((tmpl) => (
+                  <SelectItem key={tmpl.id} value={tmpl.id}>
+                    {tmpl.templateName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <Button
           type="button"
           variant="outline"
@@ -145,7 +217,9 @@ ${truncatedBody}`;
           className="w-full"
         >
           <Sparkles className="h-4 w-4 mr-2" />
-          {t('dooray:ai.summarize', 'AI 요약')}
+          {selectedTemplateId
+            ? t('dooray:ai.summarizeWithTemplate', '템플릿 기반 요약')
+            : t('dooray:ai.summarize', 'AI 요약')}
         </Button>
         {error && (
           <Alert variant="destructive">

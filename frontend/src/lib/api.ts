@@ -106,6 +106,8 @@ import {
   GetDoorayCommentsResponse,
   CreateDoorayTaskRequest,
   CreateDoorayTaskResult,
+  DoorayTemplate,
+  DoorayTemplateDetail,
   SyncResult,
   ImportByNumberRequest,
   ImportByIdRequest,
@@ -1769,5 +1771,21 @@ export const doorayApi = {
       body: JSON.stringify({ body }),
     });
     return handleApiResponse<{ success: boolean; message: string }>(response);
+  },
+
+  /**
+   * Get templates from a Dooray project
+   */
+  getTemplates: async (projectId: string): Promise<DoorayTemplate[]> => {
+    const response = await makeRequest(`/api/dooray/projects/${projectId}/templates`);
+    return handleApiResponse<DoorayTemplate[]>(response);
+  },
+
+  /**
+   * Get a single template detail from a Dooray project
+   */
+  getTemplate: async (projectId: string, templateId: string): Promise<DoorayTemplateDetail> => {
+    const response = await makeRequest(`/api/dooray/projects/${projectId}/templates/${templateId}`);
+    return handleApiResponse<DoorayTemplateDetail>(response);
   },
 };

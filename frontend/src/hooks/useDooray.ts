@@ -5,6 +5,8 @@ import type {
   DoorayProject,
   DoorayTask,
   DoorayTagsResponse,
+  DoorayTemplate,
+  DoorayTemplateDetail,
   SaveSettingsRequest,
   SyncRequest,
   SyncResult,
@@ -22,6 +24,8 @@ const DOORAY_KEYS = {
   projects: ['dooray', 'projects'] as const,
   tasks: (projectId: string) => ['dooray', 'tasks', projectId] as const,
   tags: (projectId: string) => ['dooray', 'tags', projectId] as const,
+  templates: (projectId: string) => ['dooray', 'templates', projectId] as const,
+  template: (projectId: string, templateId: string) => ['dooray', 'template', projectId, templateId] as const,
 };
 
 /**
@@ -153,6 +157,66 @@ export function useDoorayTags(doorayProjectId: string | null) {
 
   return {
     tagGroups: tagsResponse?.tagGroups ?? [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  };
+}
+
+/**
+ * Hook for fetching templates from a Dooray project
+ */
+export function useDoorayTemplates(doorayProjectId: string | null) {
+  const {
+    data: templates,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: doorayProjectId ? DOORAY_KEYS.templates(doorayProjectId) : ['dooray', 'templates', 'none'],
+    queryFn: () => {
+      if (!doorayProjectId) return Promise.resolve([]);
+      return doorayApi.getTemplates(doorayProjectId);
+    },
+    enabled: Boolean(doorayProjectId),
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  });
+
+  return {
+    templates: templates ?? [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  };
+}
+
+/**
+ * Hook for fetching a single template detail from a Dooray project
+ */
+export function useDoorayTemplate(doorayProjectId: string | null, templateId: string | null) {
+  const {
+    data: template,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: doorayProjectId && templateId
+      ? DOORAY_KEYS.template(doorayProjectId, templateId)
+      : ['dooray', 'template', 'none'],
+    queryFn: () => {
+      if (!doorayProjectId || !templateId) return Promise.resolve(null);
+      return doorayApi.getTemplate(doorayProjectId, templateId);
+    },
+    enabled: Boolean(doorayProjectId) && Boolean(templateId),
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  });
+
+  return {
+    template: template ?? null,
     isLoading,
     isError,
     error,
@@ -405,6 +469,8 @@ export type {
   DoorayProject,
   DoorayTask,
   DoorayTagsResponse,
+  DoorayTemplate,
+  DoorayTemplateDetail,
   SyncResult,
   ImportResult,
   ImportByNumberRequest,
