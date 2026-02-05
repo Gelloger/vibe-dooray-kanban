@@ -111,7 +111,7 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
       <NewCardContent>
         <div className="p-6 flex flex-col h-full max-h-[calc(100vh-8rem)]">
           {/* Task Header */}
-          <div className="space-y-3 flex-shrink-0">
+          <div className="space-y-3 flex-shrink-0 max-h-[40%] overflow-y-auto">
             <WYSIWYGEditor value={titleContent} disabled />
             {doorayTaskNumber && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

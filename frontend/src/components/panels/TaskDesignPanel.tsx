@@ -321,10 +321,17 @@ const TaskDesignPanel = ({ task }: TaskDesignPanelProps) => {
             <>
               <Button
                 onClick={() => {
-                  const body = formatDesignMessagesToMarkdown(messages);
+                  const claudeContent = formatDesignMessagesToMarkdown(messages);
+                  const existingBody = task.description || '';
+                  // 기존 본문에 Claude 대화 내용을 추가
+                  const body = existingBody
+                    ? `${existingBody}\n\n---\n\n## Design Discussion\n\n${claudeContent}`
+                    : claudeContent;
                   UpdateDoorayBodyDialog.show({
                     doorayTaskId: task.dooray_task_id!,
                     initialBody: body,
+                    taskId: task.id,
+                    doorayProjectId: task.dooray_project_id,
                   });
                 }}
                 variant="outline"
