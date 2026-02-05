@@ -124,6 +124,10 @@ parent_task_id: string | null, };
 
 export type CreateDoorayTaskResult = { success: boolean, dooray_task_id: string | null, dooray_task_number: number | null, local_task_id: string | null, message: string, };
 
+export type DoorayTemplate = { id: string, templateName: string, };
+
+export type DoorayTemplateDetail = { id: string, templateName: string, body: DoorayTaskBody | null, guide: DoorayTaskBody | null, subject: string | null, };
+
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 
 export type DraftWorkspaceData = { message: string, project_id: string | null, repos: Array<DraftWorkspaceRepo>, selected_profile: ExecutorProfileId | null, linked_issue: DraftWorkspaceLinkedIssue | null, };

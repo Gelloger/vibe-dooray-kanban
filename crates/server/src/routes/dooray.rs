@@ -34,6 +34,8 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/dooray/projects/{dooray_project_id}/tasks/{dooray_task_id}/comments", get(get_dooray_comments))
         .route("/dooray/tasks", post(create_dooray_task))
         .route("/dooray/tasks/{dooray_task_id}", put(update_dooray_task))
+        .route("/dooray/projects/{dooray_project_id}/templates", get(get_dooray_templates))
+        .route("/dooray/projects/{dooray_project_id}/templates/{template_id}", get(get_dooray_template))
 }
 
 // ============== Settings Endpoints ==============
@@ -239,6 +241,44 @@ pub struct DoorayTagGroup {
 pub struct DoorayTagsResponse {
     #[serde(rename = "tagGroups")]
     pub tag_groups: Vec<DoorayTagGroup>,
+}
+
+// ============== Dooray Templates Types ==============
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DoorayTemplate {
+    pub id: String,
+    #[serde(rename = "templateName")]
+    pub template_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DoorayTemplateDetail {
+    pub id: String,
+    #[serde(rename = "templateName")]
+    pub template_name: String,
+    pub body: Option<DoorayTaskBody>,
+    pub guide: Option<DoorayTaskBody>,
+    pub subject: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayTemplatesApiResponse {
+    result: Option<Vec<DoorayTemplate>>,
+    #[serde(rename = "totalCount")]
+    #[allow(dead_code)]
+    total_count: Option<i64>,
+    #[allow(dead_code)]
+    header: DoorayApiHeader,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayTemplateDetailApiResponse {
+    result: Option<DoorayTemplateDetail>,
+    #[allow(dead_code)]
+    header: DoorayApiHeader,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1251,6 +1291,69 @@ async fn update_dooray_task(
         success: true,
         message: "Dooray 태스크가 업데이트되었습니다.".to_string(),
     })))
+}
+
+// ============== Dooray Templates Endpoints ==============
+
+async fn get_dooray_templates(
+    State(deployment): State<DeploymentImpl>,
+    axum::extract::Path(dooray_project_id): axum::extract::Path<String>,
+) -> Result<ResponseJson<ApiResponse<Vec<DoorayTemplate>>>, ApiError> {
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    let response = client
+        .get(format!(
+            "{}/project/v1/projects/{}/templates",
+            DOORAY_API_BASE, dooray_project_id
+        ))
+        .query(&[("page", "0"), ("size", "100")])
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Ok(ResponseJson(ApiResponse::error("Failed to fetch Dooray templates")));
+    }
+
+    let api_response: DoorayTemplatesApiResponse = response
+        .json()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to parse Dooray response: {}", e)))?;
+
+    let templates = api_response.result.unwrap_or_default();
+    Ok(ResponseJson(ApiResponse::success(templates)))
+}
+
+async fn get_dooray_template(
+    State(deployment): State<DeploymentImpl>,
+    axum::extract::Path((dooray_project_id, template_id)): axum::extract::Path<(String, String)>,
+) -> Result<ResponseJson<ApiResponse<DoorayTemplateDetail>>, ApiError> {
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    let response = client
+        .get(format!(
+            "{}/project/v1/projects/{}/templates/{}",
+            DOORAY_API_BASE, dooray_project_id, template_id
+        ))
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Ok(ResponseJson(ApiResponse::error("Failed to fetch Dooray template")));
+    }
+
+    let api_response: DoorayTemplateDetailApiResponse = response
+        .json()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to parse Dooray response: {}", e)))?;
+
+    match api_response.result {
+        Some(template) => Ok(ResponseJson(ApiResponse::success(template))),
+        None => Ok(ResponseJson(ApiResponse::error("Template not found"))),
+    }
 }
 
 // ============== Helper Functions ==============

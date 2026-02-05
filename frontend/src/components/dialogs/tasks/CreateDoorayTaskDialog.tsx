@@ -546,6 +546,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
                       body={currentBody}
                       onApply={handleApplySummary}
                       disabled={isCreating}
+                      doorayProjectId={settings?.selected_project_id}
                     />
                   </div>
 
