@@ -121,6 +121,11 @@ ${truncatedBody}
 2. 템플릿의 각 섹션/항목을 원본 내용에서 추출한 정보로 채우세요
 3. 원본에 해당 정보가 없는 항목은 "[정보 없음]"으로 표시하세요
 4. 마크다운 형식을 유지하세요
+5. **Todo/할일 항목 작성 시 추상화 규칙**:
+   - 구체적인 메소드명, 쿼리문, 코드 스니펫은 포함하지 마세요
+   - "~기능 구현", "~처리 로직 추가", "~API 연동" 등 기능 단위로 추상화하세요
+   - 예시) ❌ "getUserById() 메소드 구현" → ✅ "사용자 조회 기능 구현"
+   - 예시) ❌ "SELECT * FROM users WHERE..." → ✅ "사용자 데이터 조회 쿼리 작성"
 
 ## 출력 형식
 JSON 형식으로 응답해주세요:
@@ -240,8 +245,8 @@ ${truncatedBody}`;
           {t('dooray:ai.summarizing', '본문을 분석하고 있습니다...')}
         </div>
         {streamingContent && (
-          <div className="p-3 border rounded-md bg-muted/30 text-sm">
-            <pre className="whitespace-pre-wrap">{streamingContent}</pre>
+          <div className="p-3 border rounded-md bg-muted/30 text-sm max-h-[200px] overflow-y-auto">
+            <pre className="whitespace-pre-wrap select-text">{streamingContent}</pre>
           </div>
         )}
       </div>
@@ -274,11 +279,11 @@ ${truncatedBody}`;
   return (
     <div className="space-y-4">
       {/* 요약 결과 미리보기 */}
-      <div className="p-3 border rounded-md bg-muted/30">
+      <div className="p-3 border rounded-md bg-muted/30 max-h-[300px] overflow-y-auto">
         <Label className="text-sm font-medium mb-2 block">
           {t('dooray:ai.summaryResult', '요약 결과')}
         </Label>
-        <p className="text-sm whitespace-pre-wrap">{summary?.summary}</p>
+        <p className="text-sm whitespace-pre-wrap select-text">{summary?.summary}</p>
 
         {summary?.keyPoints && summary.keyPoints.length > 0 && (
           <div className="mt-3">

@@ -13,13 +13,24 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { doorayApi } from '@/lib/api';
-import { Loader2, Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react';
+import { Loader2, Eye, EyeOff, AlertCircle, CheckCircle, Bot, ChevronDown, ChevronUp } from 'lucide-react';
 import WYSIWYGEditor from '@/components/ui/wysiwyg';
+import { AiSummaryPanel } from '../dooray-ai/AiSummaryPanel';
+import type { SummaryApplyMode } from '../dooray-ai/types';
 
 export interface UpdateDoorayBodyDialogProps {
   doorayTaskId: string;
   initialBody: string;
+  /** Task ID for design session AI features */
+  taskId?: string;
+  /** Dooray project ID for template selection */
+  doorayProjectId?: string | null;
 }
 
 type Message = {
@@ -28,13 +39,33 @@ type Message = {
 };
 
 const UpdateDoorayBodyDialogImpl = NiceModal.create<UpdateDoorayBodyDialogProps>(
-  ({ doorayTaskId, initialBody }) => {
+  ({ doorayTaskId, initialBody, taskId, doorayProjectId }) => {
     const modal = useModal();
     const { t } = useTranslation(['dooray', 'common']);
     const [body, setBody] = useState(initialBody);
     const [showPreview, setShowPreview] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [message, setMessage] = useState<Message | null>(null);
+    const [aiPanelOpen, setAiPanelOpen] = useState(false);
+
+    // Check if AI features are available (requires taskId for design session)
+    const isAiAvailable = !!taskId;
+
+    // Apply summary result
+    const handleApplySummary = useCallback((summary: string, mode: SummaryApplyMode) => {
+      switch (mode) {
+        case 'replace':
+          setBody(summary);
+          break;
+        case 'prepend':
+          setBody(`${summary}\n\n---\n\n${body}`);
+          break;
+        case 'title':
+          // title mode doesn't make sense for body update, treat as prepend
+          setBody(`${summary}\n\n---\n\n${body}`);
+          break;
+      }
+    }, [body]);
 
     const handleClose = useCallback(
       (open: boolean) => {
@@ -152,6 +183,44 @@ const UpdateDoorayBodyDialogImpl = NiceModal.create<UpdateDoorayBodyDialogProps>
                 {t('dooray:createTask.markdownSupported')}
               </p>
             </div>
+
+            {/* AI Panel */}
+            {isAiAvailable && (
+              <Collapsible open={aiPanelOpen} onOpenChange={setAiPanelOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Bot className="h-4 w-4" />
+                      {t('dooray:ai.panelTitle', 'AI 요약')}
+                    </span>
+                    {aiPanelOpen ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-4">
+                  <div className="border rounded-md p-3 space-y-3">
+                    <Label className="text-sm font-medium">
+                      {t('dooray:ai.summarySection', '템플릿 기반 요약')}
+                    </Label>
+                    <AiSummaryPanel
+                      taskId={taskId}
+                      body={body}
+                      onApply={handleApplySummary}
+                      disabled={isUpdating}
+                      doorayProjectId={doorayProjectId}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
 
             <DialogFooter className="gap-2 sm:gap-0">
               <Button
