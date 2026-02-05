@@ -303,11 +303,12 @@ const WYSIWYGEditor = forwardRef<WYSIWYGEditorRef, WysiwygProps>(
                   <RichTextPlugin
                     contentEditable={
                       <ContentEditable
-                        className={cn('outline-none', className)}
+                        className={cn('outline-none select-text', className)}
                         aria-label={
                           disabled ? 'Markdown content' : 'Markdown editor'
                         }
                         onPaste={handlePaste}
+                        onPointerDown={(e) => e.stopPropagation()}
                       />
                     }
                     placeholder={placeholderElement}

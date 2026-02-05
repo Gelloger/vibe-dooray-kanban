@@ -410,6 +410,13 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         <div
           {...getRootProps()}
           className="h-full flex flex-col gap-4 p-4 relative min-h-0"
+          onPointerDown={(e) => {
+            // Prevent DnD from capturing text selection in input elements
+            const target = e.target as HTMLElement;
+            if (target.closest('input, textarea, [contenteditable="true"]')) {
+              e.stopPropagation();
+            }
+          }}
         >
           <input {...getInputProps()} />
           {/* Drag overlay */}
