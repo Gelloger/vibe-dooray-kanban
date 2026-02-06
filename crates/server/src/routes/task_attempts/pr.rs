@@ -25,7 +25,6 @@ use executors::actions::{
 use git::{GitCliError, GitRemote, GitServiceError};
 use serde::{Deserialize, Serialize};
 use services::services::{
-    config::DEFAULT_PR_DESCRIPTION_PROMPT,
     container::ContainerService,
     git_host::{
         self, CreatePrRequest, GitHostError, GitHostProvider, ProviderKind, UnifiedPrComment,
