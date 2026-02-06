@@ -34,8 +34,25 @@
     "viewRelatedTasks": "View related tasks",
     "startReview": "리뷰 시작",
     "startingReview": "리뷰 시작 중...",
-    "saveToDooray": "두레이에 기록",
-    "savingToDooray": "불러오는 중..."
+    "updateChangelog": "Changelog 업데이트",
+    "updatingChangelog": "Changelog 생성 중..."
+  },
+  "changelog": {
+    "title": "Changelog 업데이트",
+    "updating": "Changelog 생성 중...",
+    "dialogTitle": "Changelog 업데이트",
+    "dialogDescription": "{{taskNumber}} 태스크에 변경 이력을 댓글로 추가합니다.",
+    "preview": "미리보기",
+    "step1": "세션 대화 분석 중...",
+    "step2": "코드 변경사항 분석 중...",
+    "step3": "기존 본문과 비교 중...",
+    "step4": "Changelog 생성 중...",
+    "save": "댓글로 추가",
+    "saving": "추가 중...",
+    "success": "Changelog가 추가되었습니다.",
+    "error": "Changelog 생성에 실패했습니다.",
+    "noChanges": "변경사항이 없습니다.",
+    "generating": "Changelog를 생성하고 있습니다..."
   },
   "editBranchName": {
     "dialog": {

@@ -64,6 +64,9 @@ import { PrCommentsDialog } from '@/components/dialogs/tasks/PrCommentsDialog';
 import type { NormalizedComment } from '@/components/ui/wysiwyg/nodes/pr-comment-node';
 import type { Session } from 'shared/types';
 import { buildAgentPrompt } from '@/utils/promptMessage';
+import { FileText } from 'lucide-react';
+import { UpdateChangelogDialog } from '@/components/dialogs/tasks/UpdateChangelogDialog';
+import { useDooraySettings } from '@/hooks/useDooray';
 
 interface TaskFollowUpSectionProps {
   task: TaskWithAttemptStatus;
@@ -80,6 +83,16 @@ export function TaskFollowUpSection({
   // Derive IDs from session (convert null to undefined for hooks)
   const workspaceId = session?.workspace_id ?? undefined;
   const sessionId = session?.id;
+
+  const { isConnected: isDoorayConnected } = useDooraySettings();
+  const hasDoorayIntegration = Boolean(
+    task.dooray_task_id && task.dooray_project_id
+  );
+  const showChangelogButton =
+    hasDoorayIntegration &&
+    isDoorayConnected &&
+    task.status !== 'todo' &&
+    task.status !== 'cancelled';
 
   const { isAttemptRunning, stopExecution, isStopping, processes } =
     useAttemptExecution(workspaceId, task.id);
@@ -787,6 +800,29 @@ export function TaskFollowUpSection({
           </div>
         </div>
       </div>
+
+      {/* Changelog button for Dooray-connected tasks */}
+      {showChangelogButton && (
+        <div className="px-4 pb-2">
+          <Button
+            onClick={() => {
+              UpdateChangelogDialog.show({
+                taskId: task.id,
+                sessionId,
+                workspaceId,
+                doorayTaskId: task.dooray_task_id!,
+                doorayProjectId: task.dooray_project_id!,
+                doorayTaskNumber: task.dooray_task_number || '',
+              });
+            }}
+            variant="outline"
+            className="w-full"
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            {t('changelog.title')}
+          </Button>
+        </div>
+      )}
 
       {/* Always-visible action bar */}
       <div className="p-4">
