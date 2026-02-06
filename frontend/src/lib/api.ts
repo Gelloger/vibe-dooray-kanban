@@ -856,6 +856,20 @@ export const attemptsApi = {
     return handleApiResponseAsResult<string, PrError>(response);
   },
 
+  previewPRDescription: async (
+    attemptId: string,
+    repoId: string
+  ): Promise<{ title: string; body: string }> => {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/pr/preview`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ repo_id: repoId }),
+      }
+    );
+    return handleApiResponse<{ title: string; body: string }>(response);
+  },
+
   startDevServer: async (attemptId: string): Promise<ExecutionProcess[]> => {
     const response = await makeRequest(
       `/api/task-attempts/${attemptId}/start-dev-server`,
