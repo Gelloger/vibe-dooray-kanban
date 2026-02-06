@@ -1,244 +1,184 @@
 <p align="center">
-  <a href="https://vibekanban.com">
-    <picture>
-      <source srcset="frontend/public/vibe-kanban-logo-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="frontend/public/vibe-kanban-logo.svg" media="(prefers-color-scheme: light)">
-      <img src="frontend/public/vibe-kanban-logo.svg" alt="Vibe Kanban Logo">
-    </picture>
-  </a>
+  <picture>
+    <source srcset="frontend/public/vibe-kanban-logo-dark.svg" media="(prefers-color-scheme: dark)">
+    <source srcset="frontend/public/vibe-kanban-logo.svg" media="(prefers-color-scheme: light)">
+    <img src="frontend/public/vibe-kanban-logo.svg" alt="Vibe Kanban Logo" width="240">
+  </picture>
 </p>
 
-<p align="center">Get 10X more out of Claude Code, Gemini CLI, Codex, Amp and other coding agents...</p>
-<p align="center">
-  <a href="https://www.npmjs.com/package/vibe-kanban"><img alt="npm" src="https://img.shields.io/npm/v/vibe-kanban?style=flat-square" /></a>
-  <a href="https://github.com/BloopAI/vibe-kanban/blob/main/.github/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/BloopAI/vibe-kanban/.github%2Fworkflows%2Fpublish.yml" /></a>
-  <a href="https://deepwiki.com/BloopAI/vibe-kanban"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
-</p>
+<h3 align="center">Vibe Kanban + Dooray</h3>
+<p align="center">NHN Dooray 프로젝트 관리와 AI 코딩 에이전트를 연결하는 칸반 보드</p>
 
-<h1 align="center">
-  <a href="https://jobs.polymer.co/vibe-kanban?source=github"><strong>We're hiring!</strong></a>
-</h1>
-
-![](frontend/public/vibe-kanban-screenshot-overview.png)
+---
 
 ## Overview
 
-AI coding agents are increasingly writing the world's code and human engineers now spend the majority of their time planning, reviewing, and orchestrating tasks. Vibe Kanban streamlines this process, enabling you to:
+[Vibe Kanban](https://github.com/BloopAI/vibe-kanban) 기반의 Dooray 통합 버전입니다. NHN Dooray의 태스크를 칸반 보드에서 관리하고, Claude Code 등 AI 코딩 에이전트로 작업을 수행할 수 있습니다.
 
-- Easily switch between different coding agents
-- Orchestrate the execution of multiple coding agents in parallel or in sequence
-- Quickly review work and start dev servers
-- Track the status of tasks that your coding agents are working on
-- Centralise configuration of coding agent MCP configs
-- Open projects remotely via SSH when running Vibe Kanban on a remote server
-- **Dooray Integration**: Sync tasks with NHN Dooray project management platform
+### 주요 기능
 
-You can watch a video overview [here](https://youtu.be/TFT3KnZOOAk).
+- **Dooray 태스크 동기화** — Dooray 프로젝트의 태스크를 자동으로 가져오고 상태를 동기화
+- **태스크 생성 & 임포트** — 칸반 보드에서 Dooray 태스크 직접 생성, 번호/URL로 개별 임포트
+- **AI 요약 & 분할** — Claude를 활용해 태스크 설명을 요약하거나 하위 태스크로 자동 분할
+- **템플릿 기반 요약** — Dooray 템플릿을 선택해 AI 요약의 포맷을 지정
+- **댓글 연동** — Dooray 태스크 댓글 조회 및 작성
+- **태그 필터링** — 태그 그룹별 필터로 동기화할 태스크 범위 지정
+- **멀티 에이전트 지원** — Claude Code, Gemini CLI, Codex, Amp, Copilot 등 다양한 코딩 에이전트 연동
+- **병렬 실행** — 여러 코딩 에이전트를 동시에 실행하고 진행 상황 추적
+- **Dooray MCP 서버** — MCP 프로토콜을 통한 Dooray 데이터 접근
+- **다국어 지원** — 한국어, 영어, 일본어, 중국어(간체/번체), 스페인어, 프랑스어
 
-## Installation
+## 시작하기
 
-Make sure you have authenticated with your favourite coding agent. A full list of supported coding agents can be found in the [docs](https://vibekanban.com/docs). Then in your terminal run:
+### 사전 준비
+
+1. **Dooray 계정** — 프로젝트 접근 권한이 있는 NHN Dooray 계정
+2. **API 토큰** — Dooray API 인증용 토큰
+3. **코딩 에이전트** — Claude Code, Gemini CLI 등 하나 이상의 에이전트가 설치 및 인증된 상태
+
+### Dooray API 토큰 발급
+
+1. Dooray에 로그인
+2. 우측 상단 프로필 아이콘 클릭
+3. **설정** → **API 토큰**
+4. **토큰 생성** 클릭 후 토큰 복사
+
+> **보안 주의**: API 토큰을 버전 관리에 커밋하거나 공유하지 마세요.
+
+### 설치 & 실행
 
 ```bash
+git clone <this-repo-url>
+cd vibe-dooray-kanban
+pnpm i
+pnpm run dev
+```
+
+또는 로컬 빌드 후 실행할 수도 있습니다:
+
+```bash
+./local-build.sh
 npx vibe-kanban
 ```
 
-## Dooray Integration
+> `local-build.sh`가 `npx-cli/dist/`에 바이너리를 생성하면, CLI가 자동으로 로컬 빌드를 감지(local dev mode)합니다.
 
-Vibe Kanban supports integration with [NHN Dooray](https://dooray.com), a project management and collaboration platform.
+### Dooray 연동 설정
 
-### Features
+1. 좌측 네비게이션의 **Settings** (⚙️) 클릭
+2. **Dooray** 탭으로 이동
+3. 도메인 입력 (예: `your-company` — `your-company.dooray.com`에서 서브도메인 부분)
+4. API 토큰 붙여넣기 후 **Save**
+5. 프로젝트 목록에서 연동할 프로젝트 선택
+6. (선택) 태그 필터를 설정해 동기화 범위 지정
 
-- **Task Sync**: Import tasks from Dooray projects and sync status changes
-- **Task Creation**: Create Dooray tasks directly from Vibe Kanban with AI-assisted summary and split
-- **Comment Integration**: Post comments to Dooray tasks from your workflow
-- **Tag & Project Filtering**: Filter and organize tasks by Dooray tags and projects
+## 사용법
 
-### Prerequisites
+### 태스크 동기화
 
-Before setting up Dooray integration, you need:
+태스크 패널에서 **Sync** 버튼을 클릭하면 Dooray 프로젝트의 태스크를 가져옵니다. 태스크 상태가 자동으로 매핑됩니다:
 
-1. **Dooray Account**: An active NHN Dooray account with project access
-2. **API Token**: A Dooray API token for authentication
-3. **Domain**: Your Dooray tenant domain (e.g., `your-company` from `your-company.dooray.com`)
+| Dooray 상태 | 칸반 상태 |
+|-------------|----------|
+| 진행 중 (working) | In Progress |
+| 등록 (registered) | Todo |
+| 대기 (backlog) | Todo |
 
-### Getting Your Dooray API Token
+### 태스크 생성
 
-1. Log in to your Dooray account
-2. Click your profile icon in the top-right corner
-3. Go to **Settings** → **API Token**
-4. Click **Generate Token** and copy the generated token
-5. Store this token securely - it won't be shown again
+1. **Create Dooray Task** 클릭
+2. 제목과 설명 입력
+3. 필수 태그 선택 (태그 그룹에 필수 설정이 있는 경우)
+4. (선택) **AI Summary** 로 설명 요약 또는 **AI Split** 으로 하위 태스크 자동 분할
+5. **Create** 클릭
 
-> ⚠️ **Security Note**: Keep your API token private. Never commit it to version control or share it publicly.
+### 태스크 임포트
 
-### Setup Guide
+개별 태스크를 번호 또는 URL로 임포트할 수 있습니다:
 
-#### Step 1: Open Dooray Settings
+- 태스크 번호: `PROJECT/123`
+- Dooray URL: `https://your-company.dooray.com/project/task/12345678`
 
-1. Launch Vibe Kanban (`npx vibe-kanban` or `pnpm run dev`)
-2. Click the **Settings** icon (⚙️) in the navigation bar
-3. Navigate to the **Dooray** tab
+### AI 기능
 
-#### Step 2: Configure Connection
+| 기능 | 설명 |
+|------|------|
+| **AI 요약** | 긴 태스크 설명을 간결하게 요약 |
+| **템플릿 기반 요약** | Dooray 템플릿 포맷에 맞춰 요약 생성 |
+| **AI 분할** | 큰 태스크를 하위 태스크로 자동 분할 |
 
-1. **Domain**: Enter your Dooray domain (e.g., `your-company`)
-   - This is the subdomain part of your Dooray URL
-2. **API Token**: Paste your Dooray API token
-3. Click **Save** to verify the connection
+연결된 AI 에이전트(Claude Code, Gemini 등)를 활용하여 처리됩니다.
 
-#### Step 3: Select Project
+### 댓글
 
-1. After saving, a list of available projects will appear
-2. Select the project you want to sync with Vibe Kanban
-3. The project's tasks and tags will be loaded
+Dooray 태스크의 댓글을 조회하고, 칸반 보드에서 바로 댓글을 작성할 수 있습니다.
 
-#### Step 4: Configure Tag Filters (Optional)
+## 트러블슈팅
 
-1. Select specific tags to filter which tasks are synced
-2. Only tasks with the selected tags will appear in Vibe Kanban
-3. Leave empty to sync all tasks from the project
+| 문제 | 해결 방법 |
+|------|----------|
+| "Invalid API Token" | Dooray 설정에서 토큰 재발급 |
+| "Project not found" | 도메인과 프로젝트 접근 권한 확인 |
+| "Failed to sync" | 네트워크 연결 및 API 토큰 권한 확인 |
+| 태스크가 안 보임 | 태그 필터 설정 확인 후 다시 동기화 |
 
-### Usage
+## 개발
 
-#### Syncing Tasks from Dooray
-
-- Click the **Sync** button in the task panel to import tasks from Dooray
-- Tasks will be imported with their title, description, and status
-- Changes made in Vibe Kanban can be synced back to Dooray
-
-#### Creating Tasks in Dooray
-
-1. Click **Create Dooray Task** button
-2. Enter the task title and description
-3. (Optional) Use **AI Summary/Split** to:
-   - Summarize long descriptions
-   - Split large tasks into subtasks
-4. Click **Create** to save the task to Dooray
-
-#### Posting Comments
-
-- Select a task linked to Dooray
-- Use the comment feature to post updates directly to the Dooray task
-
-### Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| "Invalid API Token" | Regenerate your token in Dooray settings |
-| "Project not found" | Check your domain and ensure you have project access |
-| "Failed to sync" | Verify your network connection and API token permissions |
-| Tasks not appearing | Check tag filter settings or try syncing again |
-
-### AI-Powered Task Management
-
-When creating Dooray tasks, you can use AI to:
-- **Summarize** long task descriptions into concise summaries
-- **Split** large tasks into smaller subtasks automatically
-- **Edit** AI suggestions before creating tasks
-
-This feature uses your connected AI agent (Claude Code, Gemini, etc.) for processing.
-
-## Documentation
-
-Please head to the [website](https://vibekanban.com/docs) for the latest documentation and user guides.
-
-## Support
-
-We use [GitHub Discussions](https://github.com/BloopAI/vibe-kanban/discussions) for feature requests. Please open a discussion to create a feature request. For bugs please open an issue on this repo.
-
-## Contributing
-
-We would prefer that ideas and changes are first raised with the core team via [GitHub Discussions](https://github.com/BloopAI/vibe-kanban/discussions) or [Discord](https://discord.gg/AC4nwVtJM3), where we can discuss implementation details and alignment with the existing roadmap. Please do not open PRs without first discussing your proposal with the team.
-
-## Development
-
-### Prerequisites
+### 사전 요구사항
 
 - [Rust](https://rustup.rs/) (latest stable)
 - [Node.js](https://nodejs.org/) (>=18)
 - [pnpm](https://pnpm.io/) (>=8)
 
-Additional development tools:
 ```bash
 cargo install cargo-watch
 cargo install sqlx-cli
-```
-
-Install dependencies:
-```bash
 pnpm i
 ```
 
-### Running the dev server
+### 개발 서버 실행
 
 ```bash
 pnpm run dev
 ```
 
-This will start the backend. A blank DB will be copied from the `dev_assets_seed` folder.
+프론트엔드와 백엔드가 함께 실행됩니다. 빈 DB가 `dev_assets_seed` 폴더에서 복사됩니다.
 
-### Building the frontend
+### 주요 명령어
 
-To build just the frontend:
+| 명령어 | 설명 |
+|--------|------|
+| `pnpm run dev` | 프론트엔드 + 백엔드 개발 서버 |
+| `pnpm run check` | 프론트엔드 TypeScript 타입 체크 |
+| `pnpm run backend:check` | Rust cargo check |
+| `pnpm run generate-types` | Rust → TypeScript 타입 생성 |
+| `pnpm run prepare-db` | SQLx 오프라인 준비 |
+| `cargo test --workspace` | Rust 테스트 실행 |
 
-```bash
-cd frontend
-pnpm build
+### 환경 변수
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `PORT` | 자동 할당 | 서버 포트 |
+| `BACKEND_PORT` | `0` (자동) | 백엔드 포트 (개발 모드) |
+| `FRONTEND_PORT` | `3000` | 프론트엔드 포트 (개발 모드) |
+| `HOST` | `127.0.0.1` | 백엔드 호스트 |
+| `VK_ALLOWED_ORIGINS` | 미설정 | 허용할 오리진 (리버스 프록시 사용 시) |
+
+### 프로젝트 구조
+
+```
+├── crates/           # Rust workspace
+│   ├── server/       # API 서버 + Dooray 라우트
+│   ├── db/           # SQLx 모델 + 마이그레이션
+│   ├── executors/    # 코딩 에이전트 실행기
+│   ├── services/     # Git 호스트, AI 서비스
+│   └── utils/        # 유틸리티
+├── frontend/         # React + TypeScript (Vite, Tailwind)
+├── shared/           # 생성된 TypeScript 타입 (직접 수정 금지)
+└── scripts/          # 개발 헬퍼 스크립트
 ```
 
-### Build from source (macOS)
+## 원본 프로젝트
 
-1. Run `./local-build.sh`
-2. Test with `cd npx-cli && node bin/cli.js`
-
-
-### Environment Variables
-
-The following environment variables can be configured at build time or runtime:
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `POSTHOG_API_KEY` | Build-time | Empty | PostHog analytics API key (disables analytics if empty) |
-| `POSTHOG_API_ENDPOINT` | Build-time | Empty | PostHog analytics endpoint (disables analytics if empty) |
-| `PORT` | Runtime | Auto-assign | **Production**: Server port. **Dev**: Frontend port (backend uses PORT+1) |
-| `BACKEND_PORT` | Runtime | `0` (auto-assign) | Backend server port (dev mode only, overrides PORT+1) |
-| `FRONTEND_PORT` | Runtime | `3000` | Frontend dev server port (dev mode only, overrides PORT) |
-| `HOST` | Runtime | `127.0.0.1` | Backend server host |
-| `MCP_HOST` | Runtime | Value of `HOST` | MCP server connection host (use `127.0.0.1` when `HOST=0.0.0.0` on Windows) |
-| `MCP_PORT` | Runtime | Value of `BACKEND_PORT` | MCP server connection port |
-| `DISABLE_WORKTREE_CLEANUP` | Runtime | Not set | Disable all git worktree cleanup including orphan and expired workspace cleanup (for debugging) |
-| `VK_ALLOWED_ORIGINS` | Runtime | Not set | Comma-separated list of origins that are allowed to make backend API requests (e.g., `https://my-vibekanban-frontend.com`) |
-
-**Build-time variables** must be set when running `pnpm run build`. **Runtime variables** are read when the application starts.
-
-#### Self-Hosting with a Reverse Proxy or Custom Domain
-
-When running Vibe Kanban behind a reverse proxy (e.g., nginx, Caddy, Traefik) or on a custom domain, you must set the `VK_ALLOWED_ORIGINS` environment variable. Without this, the browser's Origin header won't match the backend's expected host, and API requests will be rejected with a 403 Forbidden error.
-
-Set it to the full origin URL(s) where your frontend is accessible:
-
-```bash
-# Single origin
-VK_ALLOWED_ORIGINS=https://vk.example.com
-
-# Multiple origins (comma-separated)
-VK_ALLOWED_ORIGINS=https://vk.example.com,https://vk-staging.example.com
-```
-
-### Remote Deployment
-
-When running Vibe Kanban on a remote server (e.g., via systemctl, Docker, or cloud hosting), you can configure your editor to open projects via SSH:
-
-1. **Access via tunnel**: Use Cloudflare Tunnel, ngrok, or similar to expose the web UI
-2. **Configure remote SSH** in Settings → Editor Integration:
-   - Set **Remote SSH Host** to your server hostname or IP
-   - Set **Remote SSH User** to your SSH username (optional)
-3. **Prerequisites**:
-   - SSH access from your local machine to the remote server
-   - SSH keys configured (passwordless authentication)
-   - VSCode Remote-SSH extension
-
-When configured, the "Open in VSCode" buttons will generate URLs like `vscode://vscode-remote/ssh-remote+user@host/path` that open your local editor and connect to the remote server.
-
-See the [documentation](https://vibekanban.com/docs/configuration-customisation/global-settings#remote-ssh-configuration) for detailed setup instructions.
+이 프로젝트는 [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban)을 기반으로 합니다. 원본 문서는 [vibekanban.com/docs](https://vibekanban.com/docs)에서 확인할 수 있습니다.
