@@ -528,8 +528,25 @@
     "startingReview": "Starting Review...",
     "task": "Task",
     "duplicate": "Duplicate",
-    "saveToDooray": "Save to Dooray",
-    "savingToDooray": "Loading..."
+    "updateChangelog": "Update Changelog",
+    "updatingChangelog": "Generating Changelog..."
+  },
+  "changelog": {
+    "title": "Update Changelog",
+    "updating": "Generating Changelog...",
+    "dialogTitle": "Update Changelog",
+    "dialogDescription": "Add changelog as a comment to task {{taskNumber}}.",
+    "preview": "Preview",
+    "step1": "Analyzing session conversation...",
+    "step2": "Analyzing code changes...",
+    "step3": "Comparing with existing body...",
+    "step4": "Generating changelog...",
+    "save": "Add as Comment",
+    "saving": "Adding...",
+    "success": "Changelog has been added.",
+    "error": "Failed to generate changelog.",
+    "noChanges": "No changes detected.",
+    "generating": "Generating changelog..."
   },
   "editBranchName": {
     "dialog": {

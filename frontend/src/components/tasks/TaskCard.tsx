@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
-import { Link, Loader2, XCircle, Play } from 'lucide-react';
+import { Link, Loader2, XCircle, Play, FileText } from 'lucide-react';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import { ActionsDropdown } from '@/components/ui/actions-dropdown';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { TaskCardHeader } from './TaskCardHeader';
 import { DoorayCommentsSection } from './DoorayCommentsSection';
 import { useTranslation } from 'react-i18next';
 import { CreateAttemptDialog } from '@/components/dialogs';
+import { UpdateChangelogDialog } from '@/components/dialogs/tasks/UpdateChangelogDialog';
 
 type Task = TaskWithAttemptStatus;
 
@@ -138,6 +139,29 @@ export function TaskCard({
                   <Play className="h-4 w-4" />
                 </Button>
               )}
+              {task.status !== 'todo' &&
+                task.status !== 'cancelled' &&
+                task.dooray_task_id &&
+                task.dooray_project_id && (
+                  <Button
+                    variant="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      UpdateChangelogDialog.show({
+                        taskId: task.id,
+                        doorayTaskId: task.dooray_task_id!,
+                        doorayProjectId: task.dooray_project_id!,
+                        doorayTaskNumber: task.dooray_task_number || '',
+                      });
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    title={t('changelog.title')}
+                    className="text-blue-600 hover:text-blue-700"
+                  >
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                )}
               <ActionsDropdown task={task} />
             </>
           }

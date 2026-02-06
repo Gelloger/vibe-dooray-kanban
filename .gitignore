@@ -94,5 +94,8 @@ vibe-kanban-cloud/
 .omc/
 frontend/.omc/
 
+# Serena plugin
+.serena/
+
 # Temp files
 temp
