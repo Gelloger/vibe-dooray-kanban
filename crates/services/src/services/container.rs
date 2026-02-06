@@ -652,7 +652,9 @@ pub trait ContainerService {
         let session = Session::find_by_id(pool, session_id)
             .await?
             .ok_or_else(|| ContainerError::Other(anyhow!("Session not found")))?;
-        let workspace = Workspace::find_by_id(pool, session.workspace_id)
+        let workspace_id = session.workspace_id
+            .ok_or_else(|| ContainerError::Other(anyhow!("Session has no workspace")))?;
+        let workspace = Workspace::find_by_id(pool, workspace_id)
             .await?
             .ok_or_else(|| ContainerError::Other(anyhow!("Workspace not found")))?;
 
