@@ -607,18 +607,12 @@ async fn sync_dooray_tasks(
 
     let dooray_tasks = api_response.result.unwrap_or_default();
     let mut created = 0;
-    let updated = 0;
-    let mut skipped = 0;
+    let mut updated = 0;
+    let skipped = 0;
 
     for dooray_task in dooray_tasks {
         // Check if task already exists locally
         let existing = Task::find_by_dooray_task_id(&deployment.db().pool, &dooray_task.id).await?;
-
-        if existing.is_some() {
-            // Task already synced, skip for now (could update in bi-directional mode)
-            skipped += 1;
-            continue;
-        }
 
         // Fetch task detail to get body content
         let detail_response = client
@@ -640,9 +634,6 @@ async fn sync_dooray_tasks(
             None
         };
 
-        // Create new local task
-        let task_number = format!("{}/{}", payload.dooray_project_code, dooray_task.number);
-
         let status = match dooray_task.workflow_class.as_deref() {
             Some("working") => TaskStatus::InProgress,
             Some("registered") => TaskStatus::Todo,
@@ -650,21 +641,38 @@ async fn sync_dooray_tasks(
             _ => TaskStatus::Todo,
         };
 
-        let create_data = CreateTask {
-            project_id: payload.project_id,
-            title: dooray_task.subject,
-            description,
-            status: Some(status),
-            parent_workspace_id: None,
-            image_ids: None,
-            dooray_task_id: Some(dooray_task.id),
-            dooray_project_id: Some(payload.dooray_project_id.clone()),
-            dooray_task_number: Some(task_number),
-        };
+        if let Some(existing_task) = existing {
+            // Update existing task with latest Dooray content
+            Task::update(
+                &deployment.db().pool,
+                existing_task.id,
+                existing_task.project_id,
+                dooray_task.subject,
+                description,
+                status,
+                existing_task.parent_workspace_id,
+            ).await?;
+            updated += 1;
+        } else {
+            // Create new local task
+            let task_number = format!("{}/{}", payload.dooray_project_code, dooray_task.number);
 
-        let task_id = Uuid::new_v4();
-        Task::create(&deployment.db().pool, &create_data, task_id).await?;
-        created += 1;
+            let create_data = CreateTask {
+                project_id: payload.project_id,
+                title: dooray_task.subject,
+                description,
+                status: Some(status),
+                parent_workspace_id: None,
+                image_ids: None,
+                dooray_task_id: Some(dooray_task.id),
+                dooray_project_id: Some(payload.dooray_project_id.clone()),
+                dooray_task_number: Some(task_number),
+            };
+
+            let task_id = Uuid::new_v4();
+            Task::create(&deployment.db().pool, &create_data, task_id).await?;
+            created += 1;
+        }
     }
 
     // Update selected project in settings
