@@ -1,5 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  Group,
+  Panel,
+  Separator,
+  useDefaultLayout,
+} from 'react-resizable-panels';
 import { useProject } from '@/contexts/ProjectContext';
 import { useTaskAttemptsWithSessions } from '@/hooks/useTaskAttempts';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
@@ -106,128 +112,162 @@ const TaskPanel = ({ task }: TaskPanelProps) => {
     },
   ];
 
+  // Resizable panels layout storage
+  const { defaultLayout, onLayoutChange } = useDefaultLayout({
+    groupId: 'taskPanel-v2',  // Changed to reset cached layout
+    storage: localStorage,
+  });
+
   return (
     <>
-      <NewCardContent>
-        <div className="p-6 flex flex-col h-full max-h-[calc(100vh-8rem)]">
-          {/* Task Header */}
-          <div className="space-y-3 flex-shrink-0 max-h-[40%] overflow-y-auto">
-            <WYSIWYGEditor value={titleContent} disabled />
-            {doorayTaskNumber && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-mono">
-                  {doorayTaskNumber}
-                </span>
-              </div>
-            )}
-            {descriptionContent && (
-              <WYSIWYGEditor value={descriptionContent} disabled />
-            )}
-          </div>
-
-          {/* Tab Navigation */}
-          <div className="flex gap-1 mt-4 mb-4 border-b border-border">
-            <button
-              onClick={() => setActiveTab('design')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors',
-                'border-b-2 -mb-px',
-                activeTab === 'design'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              )}
+      <NewCardContent className="h-full flex flex-col">
+        <Group
+          orientation="vertical"
+          className="h-full min-h-0"
+          defaultLayout={defaultLayout}
+          onLayoutChange={onLayoutChange}
+        >
+            {/* Task Header Panel */}
+            <Panel
+              id="task-header"
+              defaultSize={30}
+              minSize={10}
+              className="min-h-0 overflow-hidden"
             >
-              <PencilRuler size={14} />
-              {t('taskPanel.tabs.design')}
-            </button>
-            <button
-              onClick={() => setActiveTab('attempts')}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors',
-                'border-b-2 -mb-px',
-                activeTab === 'attempts'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <ListTodo size={14} />
-              {t('taskPanel.tabs.attempts')}
-            </button>
-          </div>
-
-          {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {activeTab === 'design' ? (
-              <TaskDesignPanel task={task} />
-            ) : (
-              <div className="space-y-4">
-                {task.parent_workspace_id && (
-                  <DataTable
-                    data={parentAttempt ? [parentAttempt] : []}
-                    columns={attemptColumns}
-                    keyExtractor={(attempt) => attempt.id}
-                    onRowClick={(attempt) => {
-                      if (config?.beta_workspaces) {
-                        navigate(`/workspaces/${attempt.id}`);
-                      } else if (projectId) {
-                        navigate(
-                          paths.attempt(projectId, attempt.task_id, attempt.id)
-                        );
-                      }
-                    }}
-                    isLoading={isParentLoading}
-                    headerContent="Parent Attempt"
-                  />
+              <div className="h-full min-h-0 overflow-y-auto p-6 pb-0 space-y-3">
+                <WYSIWYGEditor value={titleContent} disabled />
+                {doorayTaskNumber && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-mono">
+                      {doorayTaskNumber}
+                    </span>
+                  </div>
                 )}
+                {descriptionContent && (
+                  <WYSIWYGEditor value={descriptionContent} disabled />
+                )}
+              </div>
+            </Panel>
 
-                {isAttemptsLoading ? (
-                  <div className="text-muted-foreground">
-                    {t('taskPanel.loadingAttempts')}
-                  </div>
-                ) : isAttemptsError ? (
-                  <div className="text-destructive">
-                    {t('taskPanel.errorLoadingAttempts')}
-                  </div>
-                ) : (
-                  <DataTable
-                    data={displayedAttempts}
-                    columns={attemptColumns}
-                    keyExtractor={(attempt) => attempt.id}
-                    onRowClick={(attempt) => {
-                      if (config?.beta_workspaces) {
-                        navigate(`/workspaces/${attempt.id}`);
-                      } else if (projectId && task.id) {
-                        navigate(paths.attempt(projectId, task.id, attempt.id));
-                      }
-                    }}
-                    emptyState={t('taskPanel.noAttempts')}
-                    headerContent={
-                      <div className="w-full flex text-left">
-                        <span className="flex-1">
-                          {t('taskPanel.attemptsCount', {
-                            count: displayedAttempts.length,
-                          })}
-                        </span>
-                        <span>
-                          <Button
-                            variant="icon"
-                            onClick={() =>
-                              CreateAttemptDialog.show({
-                                taskId: task.id,
-                              })
+            {/* Resize Handle */}
+            <Separator
+              id="handle-task-panel"
+              className="h-2 bg-transparent hover:bg-border/50 cursor-row-resize transition-colors"
+            />
+
+            {/* Tab Content Panel - 2단계: 탭 네비게이션 추가 */}
+            <Panel
+              id="tab-content"
+              defaultSize={70}
+              minSize={10}
+              className="min-h-0 overflow-hidden"
+            >
+              <div className="h-full min-h-0 flex flex-col px-6 pb-6 overflow-hidden">
+                {/* Tab Navigation */}
+                <div className="flex gap-1 mb-4 border-b border-border flex-shrink-0">
+                  <button
+                    onClick={() => setActiveTab('design')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors',
+                      'border-b-2 -mb-px',
+                      activeTab === 'design'
+                        ? 'border-primary text-foreground'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <PencilRuler size={14} />
+                    {t('taskPanel.tabs.design')}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('attempts')}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors',
+                      'border-b-2 -mb-px',
+                      activeTab === 'attempts'
+                        ? 'border-primary text-foreground'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <ListTodo size={14} />
+                    {t('taskPanel.tabs.attempts')}
+                  </button>
+                </div>
+
+                {/* Tab Content */}
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  {activeTab === 'design' ? (
+                    <TaskDesignPanel task={task} />
+                  ) : (
+                    <div className="h-full min-h-0 overflow-y-auto space-y-4">
+                      {task.parent_workspace_id && (
+                        <DataTable
+                          data={parentAttempt ? [parentAttempt] : []}
+                          columns={attemptColumns}
+                          keyExtractor={(attempt) => attempt.id}
+                          onRowClick={(attempt) => {
+                            if (config?.beta_workspaces) {
+                              navigate(`/workspaces/${attempt.id}`);
+                            } else if (projectId) {
+                              navigate(
+                                paths.attempt(projectId, attempt.task_id, attempt.id)
+                              );
                             }
-                          >
-                            <PlusIcon size={16} />
-                          </Button>
-                        </span>
-                      </div>
-                    }
-                  />
-                )}
+                          }}
+                          isLoading={isParentLoading}
+                          headerContent="Parent Attempt"
+                        />
+                      )}
+
+                      {isAttemptsLoading ? (
+                        <div className="text-muted-foreground">
+                          {t('taskPanel.loadingAttempts')}
+                        </div>
+                      ) : isAttemptsError ? (
+                        <div className="text-destructive">
+                          {t('taskPanel.errorLoadingAttempts')}
+                        </div>
+                      ) : (
+                        <DataTable
+                          data={displayedAttempts}
+                          columns={attemptColumns}
+                          keyExtractor={(attempt) => attempt.id}
+                          onRowClick={(attempt) => {
+                            if (config?.beta_workspaces) {
+                              navigate(`/workspaces/${attempt.id}`);
+                            } else if (projectId && task.id) {
+                              navigate(paths.attempt(projectId, task.id, attempt.id));
+                            }
+                          }}
+                          emptyState={t('taskPanel.noAttempts')}
+                          headerContent={
+                            <div className="w-full flex text-left">
+                              <span className="flex-1">
+                                {t('taskPanel.attemptsCount', {
+                                  count: displayedAttempts.length,
+                                })}
+                              </span>
+                              <span>
+                                <Button
+                                  variant="icon"
+                                  onClick={() =>
+                                    CreateAttemptDialog.show({
+                                      taskId: task.id,
+                                    })
+                                  }
+                                >
+                                  <PlusIcon size={16} />
+                                </Button>
+                              </span>
+                            </div>
+                          }
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        </div>
+            </Panel>
+        </Group>
       </NewCardContent>
     </>
   );

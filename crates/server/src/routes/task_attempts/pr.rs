@@ -7,6 +7,7 @@ use axum::{
 };
 use db::models::{
     coding_agent_turn::CodingAgentTurn,
+    dooray_settings::DooraySettings,
     execution_process::{ExecutionProcess, ExecutionProcessRunReason},
     merge::{Merge, MergeStatus},
     project_repo::ProjectRepo,
@@ -110,23 +111,126 @@ pub struct GetPrCommentsQuery {
     pub repo_id: Uuid,
 }
 
+/// Request for PR description preview
+#[derive(Debug, Deserialize, TS)]
+pub struct PreviewPrDescriptionRequest {
+    pub repo_id: Uuid,
+}
+
+/// Response for PR description preview
+#[derive(Debug, Serialize, TS)]
+pub struct PreviewPrDescriptionResponse {
+    pub title: String,
+    pub body: String,
+}
+
+/// Default prompt for PR description when Dooray is NOT linked
+pub const DEFAULT_PR_DESCRIPTION_PROMPT: &str = r#"Update the PR that was just created with a better title and description.
+The PR number is #{pr_number} and the URL is {pr_url}.
+
+Analyze the changes in this branch and write:
+1. A concise, descriptive title that summarizes the changes, postfixed with "(Vibe Kanban)"
+2. A detailed description that explains:
+   - What changes were made
+   - Why they were made (based on the task context)
+   - Any important implementation details
+   - At the end, include a note: "This PR was written using [Vibe Kanban](https://vibekanban.com)"
+
+Use the appropriate CLI tool to update the PR (gh pr edit for GitHub, az repos pr update for Azure DevOps)."#;
+
+/// Prompt for PR description when Dooray IS linked
+pub const DOORAY_PR_DESCRIPTION_PROMPT: &str = r#"Update the PR that was just created.
+The PR number is #{pr_number} and the URL is {pr_url}.
+
+First, analyze the changes in this branch using `git diff` or `git log` to understand what was changed.
+
+Then set the PR title and body using the following format:
+
+**Title**: #{dooray_project_name}/{dooray_task_number} {task_title}
+
+**Body**:
+## Dooray Issue
+* https://{dooray_domain}/popup/project/projects/{dooray_project_name}/{dooray_task_number}
+
+## Checklist (필수)
+* [ ] 브랜치 확인 여부
+* [ ] Dooray Issue 링크 작성 여부
+* [ ] 컴파일 여부
+* [ ] 로컬 실행 여부
+* [ ] Labels 등록 여부
+* [ ] 셀프 리뷰 여부
+
+## Checklist (선택)
+* [ ] 테스트 추가
+* [ ] Comment 추가
+
+## Comment
+[여기에 변경사항 요약을 작성하세요. 분석한 코드 변경사항을 바탕으로:
+- 무엇을 변경했는지
+- 왜 변경했는지
+- 주요 변경 파일 및 내용
+을 간결하게 요약해주세요.]
+
+Use `gh pr edit {pr_number} --title "TITLE" --body "BODY"` to update the PR."#;
+
 async fn trigger_pr_description_follow_up(
     deployment: &DeploymentImpl,
     workspace: &Workspace,
     pr_number: i64,
     pr_url: &str,
 ) -> Result<(), ApiError> {
-    // Get the custom prompt from config, or use default
-    let config = deployment.config().read().await;
-    let prompt_template = config
-        .pr_auto_description_prompt
-        .as_deref()
-        .unwrap_or(DEFAULT_PR_DESCRIPTION_PROMPT);
+    let pool = &deployment.db().pool;
 
-    // Replace placeholders in prompt
-    let prompt = prompt_template
+    // Get task info for Dooray integration
+    let task = workspace.parent_task(pool).await?;
+    let dooray_settings = DooraySettings::get(pool).await.ok().flatten();
+
+    // Determine if we have Dooray info
+    let has_dooray = task
+        .as_ref()
+        .map(|t| t.dooray_task_number.is_some())
+        .unwrap_or(false);
+
+    // Get the custom prompt from config, or use appropriate default
+    let config = deployment.config().read().await;
+    let prompt_template = config.pr_auto_description_prompt.as_deref().unwrap_or_else(|| {
+        if has_dooray {
+            DOORAY_PR_DESCRIPTION_PROMPT
+        } else {
+            DEFAULT_PR_DESCRIPTION_PROMPT
+        }
+    });
+
+    // Replace common placeholders
+    let mut prompt = prompt_template
         .replace("{pr_number}", &pr_number.to_string())
         .replace("{pr_url}", pr_url);
+
+    // Replace Dooray-specific placeholders if available
+    if let Some(ref task) = task {
+        prompt = prompt.replace("{task_title}", &task.title);
+
+        if let Some(ref dooray_task_number) = task.dooray_task_number {
+            // Extract just the number part (e.g., "Notification-개발/10611" -> "10611")
+            let number_only = dooray_task_number
+                .split('/')
+                .last()
+                .unwrap_or(dooray_task_number);
+            prompt = prompt.replace("{dooray_task_number}", number_only);
+        }
+    }
+
+    if let Some(settings) = dooray_settings {
+        if let Some(ref project_name) = settings.selected_project_name {
+            prompt = prompt.replace("{dooray_project_name}", project_name);
+        }
+        if let Some(ref domain) = settings.dooray_domain {
+            prompt = prompt.replace("{dooray_domain}", domain);
+        } else {
+            // Default domain if not set
+            prompt = prompt.replace("{dooray_domain}", "nhnent.dooray.com");
+        }
+    }
 
     drop(config); // Release the lock before async operations
 
@@ -656,6 +760,96 @@ pub async fn get_pr_comments(
             }
         }
     }
+}
+
+/// Preview PR description based on task and Dooray settings
+/// Returns the generated title and body without creating the PR
+pub async fn preview_pr_description(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Json(_request): Json<PreviewPrDescriptionRequest>,
+) -> Result<ResponseJson<ApiResponse<PreviewPrDescriptionResponse, ()>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Get task info for Dooray integration
+    let task = workspace.parent_task(pool).await?;
+    let dooray_settings = DooraySettings::get(pool).await.ok().flatten();
+
+    // Determine if we have Dooray info
+    let has_dooray = task
+        .as_ref()
+        .map(|t| t.dooray_task_number.is_some())
+        .unwrap_or(false);
+
+    let (title, body) = if has_dooray {
+        // Generate Dooray-formatted title and body
+        let task = task.as_ref().unwrap();
+        let task_title = &task.title;
+
+        // Extract just the number part (e.g., "Notification-개발/10611" -> "10611")
+        let dooray_task_number = task
+            .dooray_task_number
+            .as_ref()
+            .map(|n| n.split('/').last().unwrap_or(n))
+            .unwrap_or("");
+
+        let dooray_project_name = dooray_settings
+            .as_ref()
+            .and_then(|s| s.selected_project_name.as_deref())
+            .unwrap_or("");
+
+        let dooray_domain = dooray_settings
+            .as_ref()
+            .and_then(|s| s.dooray_domain.as_deref())
+            .unwrap_or("nhnent.dooray.com");
+
+        let title = format!(
+            "#{}/{} {}",
+            dooray_project_name, dooray_task_number, task_title
+        );
+
+        let body = format!(
+            r#"## Dooray Issue
+* https://{}/popup/project/projects/{}/{}
+
+## Checklist (필수)
+* [ ] 브랜치 확인 여부
+* [ ] Dooray Issue 링크 작성 여부
+* [ ] 컴파일 여부
+* [ ] 로컬 실행 여부
+* [ ] Labels 등록 여부
+* [ ] 셀프 리뷰 여부
+
+## Checklist (선택)
+* [ ] 테스트 추가
+* [ ] Comment 추가
+
+## Comment
+"#,
+            dooray_domain, dooray_project_name, dooray_task_number
+        );
+
+        (title, body)
+    } else {
+        // Default format for non-Dooray tasks
+        let task_title = task
+            .as_ref()
+            .map(|t| t.title.clone())
+            .unwrap_or_else(|| "Untitled".to_string());
+        let task_description = task
+            .as_ref()
+            .and_then(|t| t.description.clone())
+            .unwrap_or_default();
+
+        let title = format!("{} (vibe-kanban)", task_title);
+        let body = task_description;
+
+        (title, body)
+    };
+
+    Ok(ResponseJson(ApiResponse::success(
+        PreviewPrDescriptionResponse { title, body },
+    )))
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]

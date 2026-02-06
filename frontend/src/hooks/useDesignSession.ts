@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { tasksApi } from '@/lib/api';
+import {
+  useDesignChatStore,
+  useDesignChatState,
+} from '@/stores/useDesignChatStore';
 import type {
   AddDesignMessageRequest,
   DesignMessage,
@@ -165,33 +169,18 @@ export function useDesignSessionMutations(taskId?: string) {
   };
 }
 
-// Tool event type for design chat streaming
-export interface ToolEvent {
-  type: 'tool_use' | 'tool_result';
-  toolName: string;
-  content: string;
-}
-
-// Streaming event that preserves order of text and tool events
-export interface StreamingEvent {
-  type: 'text' | 'tool_use' | 'tool_result';
-  content: string;
-  toolName?: string;
-}
-
 /**
  * Hook for streaming design chat with real-time updates.
+ * Uses Zustand store for global state management, enabling parallel chats across tasks.
  * Provides chunk-by-chunk response streaming.
  */
 export function useDesignChatStream(taskId?: string) {
   const queryClient = useQueryClient();
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
-  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
-  const [streamingEvents, setStreamingEvents] = useState<StreamingEvent[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [currentUserMessage, setCurrentUserMessage] = useState<DesignMessage | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Zustand 스토어에서 상태 읽기
+  const chatState = useDesignChatState(taskId);
+  const store = useDesignChatStore();
+
   // Track if we need to start a new text segment after tool events
   const pendingTextRef = useRef<string>('');
 
@@ -210,26 +199,17 @@ export function useDesignChatStream(taskId?: string) {
       onChunk?: (content: string) => void
     ): Promise<{ userMessage: DesignMessage; assistantMessage: DesignMessage } | null> => {
       if (!taskId) {
-        setError('Task ID is required');
+        store.setError(taskId!, 'Task ID is required');
         return null;
       }
 
-      // Cancel any existing stream
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      // Cancel any existing stream for this task
+      store.cancelStream(taskId);
 
       const controller = new AbortController();
-      abortControllerRef.current = controller;
+      store.setAbortController(taskId, controller);
 
-      setIsStreaming(true);
-      setStreamingContent('');
-      setToolEvents([]);
-      setStreamingEvents([]);
-      setError(null);
-      pendingTextRef.current = '';
-
-      // Create user message to display immediately (not via cache to ensure correct ordering)
+      // Create user message to display immediately
       const optimisticUserMessage: DesignMessage = {
         id: `temp-${Date.now()}`,
         session_id: '',
@@ -237,7 +217,9 @@ export function useDesignChatStream(taskId?: string) {
         content: message,
         created_at: new Date().toISOString(),
       };
-      setCurrentUserMessage(optimisticUserMessage);
+
+      store.startStreaming(taskId, optimisticUserMessage);
+      pendingTextRef.current = '';
 
       let userMessage: DesignMessage | null = null;
       let assistantMessage: DesignMessage | null = null;
@@ -255,27 +237,29 @@ export function useDesignChatStream(taskId?: string) {
             case 'UserMessageSaved':
               userMessage = event.data.message;
               // Update current user message with server-assigned ID
-              setCurrentUserMessage(userMessage);
+              store.updateCurrentUserMessage(taskId, userMessage);
               break;
 
             case 'AssistantChunk':
               accumulatedContent += event.data.content;
               pendingTextRef.current += event.data.content;
-              setStreamingContent(accumulatedContent);
+              store.updateStreamingContent(taskId, accumulatedContent);
               // Update or add text event in streamingEvents
-              setStreamingEvents(prev => {
-                const lastEvent = prev[prev.length - 1];
+              {
+                const currentState = store.getState(taskId);
+                const events = currentState.streamingEvents;
+                const lastEvent = events[events.length - 1];
                 if (lastEvent?.type === 'text') {
                   // Append to existing text segment
-                  return [
-                    ...prev.slice(0, -1),
+                  store.setStreamingEvents(taskId, [
+                    ...events.slice(0, -1),
                     { ...lastEvent, content: lastEvent.content + event.data.content }
-                  ];
+                  ]);
                 } else {
                   // Start new text segment
-                  return [...prev, { type: 'text', content: event.data.content }];
+                  store.addStreamingEvent(taskId, { type: 'text', content: event.data.content });
                 }
-              });
+              }
               onChunk?.(event.data.content);
               break;
 
@@ -284,30 +268,36 @@ export function useDesignChatStream(taskId?: string) {
               break;
 
             case 'ToolUse':
-              setToolEvents(prev => [...prev, {
-                type: 'tool_use',
-                toolName: event.data.tool_name,
-                content: JSON.stringify(event.data.tool_input, null, 2),
-              }]);
-              // Add tool event to streamingEvents (this breaks text continuity)
-              setStreamingEvents(prev => [...prev, {
-                type: 'tool_use',
-                toolName: event.data.tool_name,
-                content: JSON.stringify(event.data.tool_input, null, 2),
-              }]);
+              {
+                const currentState = store.getState(taskId);
+                store.setToolEvents(taskId, [...currentState.toolEvents, {
+                  type: 'tool_use',
+                  toolName: event.data.tool_name,
+                  content: JSON.stringify(event.data.tool_input, null, 2),
+                }]);
+                // Add tool event to streamingEvents (this breaks text continuity)
+                store.addStreamingEvent(taskId, {
+                  type: 'tool_use',
+                  toolName: event.data.tool_name,
+                  content: JSON.stringify(event.data.tool_input, null, 2),
+                });
+              }
               break;
 
             case 'ToolResult':
-              setToolEvents(prev => [...prev, {
-                type: 'tool_result',
-                toolName: event.data.tool_name,
-                content: event.data.output,
-              }]);
-              // Skip adding tool_result to streamingEvents (user said to remove it)
+              {
+                const currentState = store.getState(taskId);
+                store.setToolEvents(taskId, [...currentState.toolEvents, {
+                  type: 'tool_result',
+                  toolName: event.data.tool_name,
+                  content: event.data.output,
+                }]);
+                // Skip adding tool_result to streamingEvents
+              }
               break;
 
             case 'Error':
-              setError(event.data.message);
+              store.setError(taskId, event.data.message);
               break;
           }
         }
@@ -324,43 +314,35 @@ export function useDesignChatStream(taskId?: string) {
         if ((err as Error).name !== 'AbortError') {
           const errorMessage =
             err instanceof Error ? err.message : 'Unknown error occurred';
-          setError(errorMessage);
+          store.setError(taskId, errorMessage);
           console.error('Design chat stream error:', err);
         }
         return null;
       } finally {
-        setIsStreaming(false);
-        setStreamingContent('');
-        setToolEvents([]);
-        setStreamingEvents([]);
-        setCurrentUserMessage(null);
+        store.finishStreaming(taskId);
+        store.setAbortController(taskId, null);
         pendingTextRef.current = '';
-        abortControllerRef.current = null;
       }
     },
-    [taskId, refetchQueries]
+    [taskId, store, refetchQueries]
   );
 
   const cancelStream = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
+    if (taskId) {
+      store.cancelStream(taskId);
+      // Refetch to get any saved messages
+      refetchQueries();
     }
-    setIsStreaming(false);
-    setCurrentUserMessage(null);
-    setStreamingEvents([]);
-    // Refetch to get any saved messages
-    refetchQueries();
-  }, [refetchQueries]);
+  }, [taskId, store, refetchQueries]);
 
   return {
     sendStreamingChat,
     cancelStream,
-    isStreaming,
-    streamingContent,
-    streamingEvents,
-    toolEvents,
-    currentUserMessage,
-    error,
+    isStreaming: chatState.isStreaming,
+    streamingContent: chatState.streamingContent,
+    streamingEvents: chatState.streamingEvents,
+    toolEvents: chatState.toolEvents,
+    currentUserMessage: chatState.currentUserMessage,
+    error: chatState.error,
   };
 }

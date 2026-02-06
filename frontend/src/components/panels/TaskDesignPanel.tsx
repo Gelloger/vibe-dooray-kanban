@@ -245,7 +245,7 @@ const TaskDesignPanel = ({ task }: TaskDesignPanelProps) => {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
       {/* Messages area */}
       <div className="flex-1 min-h-0">
         {hasMessages || isStreaming ? (
