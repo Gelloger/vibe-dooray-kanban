@@ -79,27 +79,69 @@ export function useChangelogGenerator({
     try {
       // === Step 1: Analyze session conversation ===
       let conversationSummary = '';
+
+      // Try to get workspace session conversation
       if (sessionId) {
         try {
           const { summaryContent } =
             await fetchSessionConversationSummary(sessionId);
           conversationSummary = summaryContent;
-        } catch {
-          // Session conversation may not be available
+        } catch (err) {
+          console.warn('[Changelog] Failed to fetch session conversation:', err);
         }
       }
 
-      // Also get design messages if available
+      // Get design messages (works with taskId alone, no sessionId needed)
       let designMessages = '';
       try {
-        const messages = await tasksApi.getDesignMessages(taskId);
-        if (messages.length > 0) {
-          designMessages = messages
+        const sessionFull = await tasksApi.getDesignSessionFull(taskId);
+        if (sessionFull.messages && sessionFull.messages.length > 0) {
+          designMessages = sessionFull.messages
             .map((m) => `[${m.role}]: ${m.content}`)
             .join('\n\n');
+
+          // If we didn't have a sessionId, try getting conversation from the design session
+          if (!conversationSummary && sessionFull.session?.id) {
+            try {
+              const { summaryContent } =
+                await fetchSessionConversationSummary(sessionFull.session.id);
+              conversationSummary = summaryContent;
+            } catch {
+              // Design session may not have execution processes
+            }
+          }
         }
-      } catch {
-        // Design messages may not exist
+      } catch (err) {
+        console.warn('[Changelog] Failed to fetch design session:', err);
+        // Fallback: try getDesignMessages directly
+        try {
+          const messages = await tasksApi.getDesignMessages(taskId);
+          if (messages.length > 0) {
+            designMessages = messages
+              .map((m) => `[${m.role}]: ${m.content}`)
+              .join('\n\n');
+          }
+        } catch {
+          // No design messages available
+        }
+      }
+
+      // Also fetch Dooray task body for comparison
+      let doorayTaskBody = '';
+      try {
+        const comments = await doorayApi.getComments(
+          doorayProjectId,
+          doorayTaskId
+        );
+        if (comments.comments.length > 0) {
+          // Collect all comments as context
+          const allComments = comments.comments
+            .map((c) => c.content)
+            .join('\n---\n');
+          doorayTaskBody = allComments;
+        }
+      } catch (err) {
+        console.warn('[Changelog] Failed to fetch Dooray comments:', err);
       }
 
       const sessionContext = [
@@ -109,7 +151,8 @@ export function useChangelogGenerator({
         .filter(Boolean)
         .join('\n\n');
 
-      if (!sessionContext.trim()) {
+      // If no session data AND no Dooray data, nothing to generate
+      if (!sessionContext.trim() && !doorayTaskBody.trim()) {
         setState({
           isGenerating: false,
           currentStep: null,
@@ -119,8 +162,10 @@ export function useChangelogGenerator({
         return null;
       }
 
-      // Use AI to extract key change points from conversation
-      const step1Prompt = `다음은 개발 세션에서 나눈 대화 내용입니다. 이 대화에서 언급된 **설계 변경사항**과 **구현 진행 상황**의 핵심 포인트만 간결하게 추출해주세요. 불필요한 설명 없이 변경사항 리스트만 작성해주세요.
+      // If we have some context, proceed with AI analysis
+      let step1Result = '';
+      if (sessionContext.trim()) {
+        const step1Prompt = `다음은 개발 세션에서 나눈 대화 내용입니다. 이 대화에서 언급된 **설계 변경사항**과 **구현 진행 상황**의 핵심 포인트만 간결하게 추출해주세요. 불필요한 설명 없이 변경사항 리스트만 작성해주세요.
 
 ${sessionContext}
 
@@ -129,11 +174,14 @@ ${sessionContext}
 - 구현 사항: (구현된 것 나열)
 - 논의 사항: (아직 미결정이거나 추가 논의가 필요한 것)`;
 
-      const step1Result = await collectAiResponse(
-        taskId,
-        step1Prompt,
-        controller.signal
-      );
+        step1Result = await collectAiResponse(
+          taskId,
+          step1Prompt,
+          controller.signal
+        );
+      } else {
+        step1Result = '(세션 대화 데이터를 사용할 수 없습니다)';
+      }
 
       // === Step 2: Analyze code changes ===
       setState((prev) => ({ ...prev, currentStep: 2 }));
@@ -141,13 +189,10 @@ ${sessionContext}
       let codeChangeSummary = '';
       if (workspaceId) {
         try {
-          // Fetch diff stats for the workspace
           const response = await fetch(
             `/api/task-attempts/${workspaceId}/diff/ws`
           );
           if (response.ok) {
-            // Use a simpler approach - just get the summary from conversation
-            // since diff stream requires WebSocket
             codeChangeSummary =
               '코드 변경사항은 세션 대화에서 추출된 정보를 기반으로 합니다.';
           }
@@ -156,7 +201,6 @@ ${sessionContext}
         }
       }
 
-      // If we have conversation data, the file changes are already captured in step 1
       const step2Result = codeChangeSummary
         ? `코드 변경 분석 완료: ${codeChangeSummary}`
         : '직접적인 코드 diff 정보는 사용할 수 없습니다. 세션 대화 기반으로 진행합니다.';
@@ -164,23 +208,15 @@ ${sessionContext}
       // === Step 3: Compare with Dooray task body ===
       setState((prev) => ({ ...prev, currentStep: 3 }));
 
-      let doorayBody = '';
-      try {
-        const comments = await doorayApi.getComments(
-          doorayProjectId,
-          doorayTaskId
+      // Get existing changelogs to avoid duplication
+      let existingChangelogContext = '';
+      if (doorayTaskBody) {
+        const changelogMatches = doorayTaskBody.match(
+          /## 📋 Changelog[\s\S]*?(?=---\n\*Generated|$)/g
         );
-        if (comments.comments.length > 0) {
-          // Get existing changelogs to avoid duplication
-          const existingChangelogs = comments.comments
-            .filter((c) => c.content.includes('📋 Changelog'))
-            .map((c) => c.content);
-          if (existingChangelogs.length > 0) {
-            doorayBody += `\n\n## 기존 Changelog 댓글\n${existingChangelogs.join('\n---\n')}`;
-          }
+        if (changelogMatches && changelogMatches.length > 0) {
+          existingChangelogContext = `\n\n## 기존 Changelog 댓글\n${changelogMatches.join('\n---\n')}`;
         }
-      } catch {
-        // Comments may not be available
       }
 
       const step3Prompt = `다음 두 가지 정보를 비교해서, **아직 Dooray 태스크에 반영되지 않은 변경사항만** 추출해주세요.
@@ -191,7 +227,7 @@ ${step1Result}
 ## 코드 변경 정보 (Step 2 결과)
 ${step2Result}
 
-${doorayBody ? `## Dooray 태스크 기존 정보\n${doorayBody}` : '(기존 Changelog 없음)'}
+${existingChangelogContext ? `## Dooray 태스크 기존 정보\n${existingChangelogContext}` : '(기존 Changelog 없음)'}
 
 이미 반영된 내용은 제외하고, 새로운 변경사항만 리스트로 정리해주세요.`;
 
