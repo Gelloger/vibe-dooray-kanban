@@ -960,6 +960,7 @@ export const Actions = {
           has_in_progress_attempt: false,
           last_attempt_failed: false,
           executor: '',
+          workspace_count: BigInt(0),
         },
         repoId,
         targetBranch: repo?.target_branch,

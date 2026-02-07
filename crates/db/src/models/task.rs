@@ -48,6 +48,7 @@ pub struct TaskWithAttemptStatus {
     pub has_in_progress_attempt: bool,
     pub last_attempt_failed: bool,
     pub executor: String,
+    pub workspace_count: i64,
 }
 
 impl std::ops::Deref for TaskWithAttemptStatus {
@@ -174,7 +175,13 @@ impl Task {
       WHERE w.task_id = t.id
      ORDER BY s.created_at DESC
       LIMIT 1
-    )                               AS "executor!: String"
+    )                               AS "executor!: String",
+
+  ( SELECT COUNT(*)
+      FROM workspaces w
+      WHERE w.task_id = t.id
+        AND w.archived = 0
+    )                               AS "workspace_count!: i64"
 
 FROM tasks t
 WHERE t.project_id = $1
@@ -204,6 +211,7 @@ ORDER BY t.created_at DESC"#,
                 has_in_progress_attempt: rec.has_in_progress_attempt != 0,
                 last_attempt_failed: rec.last_attempt_failed != 0,
                 executor: rec.executor,
+                workspace_count: rec.workspace_count,
             })
             .collect();
 

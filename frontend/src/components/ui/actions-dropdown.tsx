@@ -12,6 +12,7 @@ import { MoreHorizontal } from 'lucide-react';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import { useOpenInEditor } from '@/hooks/useOpenInEditor';
 import { DeleteTaskConfirmationDialog } from '@/components/dialogs/tasks/DeleteTaskConfirmationDialog';
+import { ResetToTodoDialog } from '@/components/dialogs/tasks/ResetToTodoDialog';
 import { ViewProcessesDialog } from '@/components/dialogs/tasks/ViewProcessesDialog';
 import { ViewRelatedTasksDialog } from '@/components/dialogs/tasks/ViewRelatedTasksDialog';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
@@ -142,6 +143,19 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
+  const handleResetToTodo = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!projectId || !task) return;
+    try {
+      await ResetToTodoDialog.show({
+        task,
+        projectId,
+      });
+    } catch {
+      // User cancelled
+    }
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -219,6 +233,14 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
               <DropdownMenuItem disabled={!projectId} onClick={handleDuplicate}>
                 {t('actionsMenu.duplicate')}
               </DropdownMenuItem>
+              {task?.status !== 'todo' && (
+                <DropdownMenuItem
+                  disabled={!projectId}
+                  onClick={handleResetToTodo}
+                >
+                  {t('actionsMenu.resetToTodo', { defaultValue: 'Reset to Todo' })}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 disabled={!projectId}
                 onClick={handleDelete}

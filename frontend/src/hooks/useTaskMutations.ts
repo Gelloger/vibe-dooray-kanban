@@ -94,10 +94,22 @@ export function useTaskMutations(projectId?: string) {
     },
   });
 
+  const resetToTodo = useMutation({
+    mutationFn: (taskId: string) => tasksApi.resetToTodo(taskId),
+    onSuccess: (updatedTask: Task) => {
+      invalidateQueries(updatedTask.id);
+      queryClient.invalidateQueries({ queryKey: workspaceSummaryKeys.all });
+    },
+    onError: (err) => {
+      console.error('Failed to reset task to todo:', err);
+    },
+  });
+
   return {
     createTask,
     createAndStart,
     updateTask,
     deleteTask,
+    resetToTodo,
   };
 }

@@ -17,6 +17,7 @@ import { openTaskForm } from '@/lib/openTaskForm';
 import { FeatureShowcaseDialog } from '@/components/dialogs/global/FeatureShowcaseDialog';
 import { BetaWorkspacesDialog } from '@/components/dialogs/global/BetaWorkspacesDialog';
 import { CreateAttemptDialog } from '@/components/dialogs';
+import { ResetToTodoDialog } from '@/components/dialogs/tasks/ResetToTodoDialog';
 import { showcases } from '@/config/showcases';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { useWorkspaceCount } from '@/hooks/useWorkspaceCount';
@@ -712,6 +713,17 @@ export function ProjectTasks() {
       if (!task || task.status === newStatus) return;
 
       try {
+        // Moving to Todo with workspaces — show reset dialog for cleanup
+        if (newStatus === 'todo' && Number(task.workspace_count) > 0) {
+          try {
+            await ResetToTodoDialog.show({ task, projectId: projectId! });
+          } catch {
+            // User cancelled — don't move the task
+            return;
+          }
+          return;
+        }
+
         await tasksApi.update(draggedTaskId, {
           title: task.title,
           description: task.description,
@@ -729,7 +741,7 @@ export function ProjectTasks() {
         console.error('Failed to update task status:', err);
       }
     },
-    [tasksById, handleViewTaskDetails]
+    [tasksById, projectId]
   );
 
   const isInitialTasksLoad = isLoading && tasks.length === 0;

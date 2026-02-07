@@ -631,6 +631,20 @@ impl Workspace {
         Ok(result.rows_affected())
     }
 
+    /// Delete all workspaces for a given task
+    pub async fn delete_all_by_task_id<'e, E>(
+        executor: E,
+        task_id: Uuid,
+    ) -> Result<u64, sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    {
+        let result = sqlx::query!("DELETE FROM workspaces WHERE task_id = $1", task_id)
+            .execute(executor)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
     /// Count total workspaces across all projects
     pub async fn count_all(pool: &SqlitePool) -> Result<i64, WorkspaceError> {
         sqlx::query_scalar!(r#"SELECT COUNT(*) as "count!: i64" FROM workspaces"#)

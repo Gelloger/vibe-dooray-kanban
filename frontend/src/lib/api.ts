@@ -400,6 +400,13 @@ export const tasksApi = {
     return handleApiResponse<void>(response);
   },
 
+  resetToTodo: async (taskId: string): Promise<Task> => {
+    const response = await makeRequest(`/api/tasks/${taskId}/reset-to-todo`, {
+      method: 'POST',
+    });
+    return handleApiResponse<Task>(response);
+  },
+
   // Design Session APIs
   getDesignSession: async (taskId: string): Promise<Session> => {
     const response = await makeRequest(`/api/tasks/${taskId}/design-session`);

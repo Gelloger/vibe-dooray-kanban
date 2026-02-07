@@ -19,7 +19,7 @@ use db::models::{
     project_repo::ProjectRepo,
     repo::{Repo, RepoError},
     session::{CreateSession, Session},
-    task::{CreateTask, Task, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
     workspace::{CreateWorkspace, Workspace},
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
 };
@@ -260,6 +260,7 @@ pub async fn create_task_and_start(
         has_in_progress_attempt: is_attempt_running,
         last_attempt_failed: false,
         executor: payload.executor_profile_id.executor.to_string(),
+        workspace_count: 1,
     })))
 }
 
@@ -405,6 +406,130 @@ pub async fn delete_task(
 
     // Return 202 Accepted to indicate deletion was scheduled
     Ok((StatusCode::ACCEPTED, ResponseJson(ApiResponse::success(()))))
+}
+
+/// Reset a task to Todo status, cleaning up all associated workspaces and worktrees.
+pub async fn reset_to_todo(
+    Extension(task): Extension<Task>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<(StatusCode, ResponseJson<ApiResponse<Task>>), ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Already Todo — no-op
+    if task.status == TaskStatus::Todo {
+        return Ok((StatusCode::OK, ResponseJson(ApiResponse::success(task))));
+    }
+
+    // Fetch associated workspaces
+    let workspaces = Workspace::fetch_all(pool, Some(task.id))
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to fetch workspaces for task {}: {}",
+                task.id,
+                e
+            );
+            ApiError::Workspace(e)
+        })?;
+
+    if workspaces.is_empty() {
+        // No workspaces — just update status
+        Task::update_status(pool, task.id, TaskStatus::Todo).await?;
+        let updated = Task::find_by_id(pool, task.id)
+            .await?
+            .ok_or(ApiError::Database(SqlxError::RowNotFound))?;
+        return Ok((StatusCode::OK, ResponseJson(ApiResponse::success(updated))));
+    }
+
+    // Stop any running execution processes
+    for ws in &workspaces {
+        deployment.container().try_stop(ws, true).await;
+    }
+
+    let repositories = WorkspaceRepo::find_unique_repos_for_task(pool, task.id).await?;
+
+    // Collect workspace directories and branch names for background cleanup
+    let workspace_dirs: Vec<PathBuf> = workspaces
+        .iter()
+        .filter_map(|ws| ws.container_ref.as_ref().map(PathBuf::from))
+        .collect();
+
+    let branch_names: Vec<String> = workspaces
+        .iter()
+        .map(|ws| ws.branch.clone())
+        .collect();
+
+    // Transaction: nullify children, delete workspaces, update status
+    let mut tx = pool.begin().await?;
+
+    for ws in &workspaces {
+        Task::nullify_children_by_workspace_id(&mut *tx, ws.id).await?;
+    }
+
+    Workspace::delete_all_by_task_id(&mut *tx, task.id).await?;
+
+    sqlx::query("UPDATE tasks SET status = 'todo', updated_at = CURRENT_TIMESTAMP WHERE id = $1")
+        .bind(task.id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    tracing::info!(
+        "Reset task {} to Todo, cleaned up {} workspaces",
+        task.id,
+        workspaces.len()
+    );
+
+    // Background cleanup of worktree directories and branches
+    let task_id = task.id;
+    let pool_clone = pool.clone();
+    tokio::spawn(async move {
+        for dir in &workspace_dirs {
+            if let Err(e) = WorkspaceManager::cleanup_workspace(dir, &repositories).await {
+                tracing::error!(
+                    "Background workspace cleanup failed for task {} at {}: {}",
+                    task_id,
+                    dir.display(),
+                    e
+                );
+            }
+        }
+
+        // Delete local branches after worktree cleanup
+        let git_service = git::GitService::new();
+        for repo in &repositories {
+            for branch in &branch_names {
+                if let Err(e) = git_service.delete_branch(&repo.path, branch) {
+                    tracing::debug!(
+                        "Could not delete branch '{}' from repo '{}': {}",
+                        branch,
+                        repo.name,
+                        e
+                    );
+                }
+            }
+        }
+
+        match Repo::delete_orphaned(&pool_clone).await {
+            Ok(count) if count > 0 => {
+                tracing::info!("Deleted {} orphaned repo records", count);
+            }
+            Err(e) => {
+                tracing::error!("Failed to delete orphaned repos: {}", e);
+            }
+            _ => {}
+        }
+    });
+
+    let updated = Task::find_by_id(pool, task.id)
+        .await?
+        .ok_or(ApiError::Database(SqlxError::RowNotFound))?;
+
+    Ok((
+        StatusCode::ACCEPTED,
+        ResponseJson(ApiResponse::success(updated)),
+    ))
 }
 
 /// Get or create a design session for a task.
@@ -1125,6 +1250,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_actions_router = Router::new()
         .route("/", put(update_task))
         .route("/", delete(delete_task))
+        .route("/reset-to-todo", post(reset_to_todo))
         .route("/design-session", get(get_or_create_design_session))
         .route("/design-session/full", get(get_design_session_with_messages))
         .route(
