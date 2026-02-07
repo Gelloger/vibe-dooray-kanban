@@ -38,6 +38,41 @@ Do not manually edit shared/types.ts, instead edit crates/server/src/bin/generat
 - Rust: prefer unit tests alongside code (`#[cfg(test)]`), run `cargo test --workspace`. Add tests for new logic and edge cases.
 - Frontend: ensure `pnpm run check` and `pnpm run lint` pass. If adding runtime logic, include lightweight tests (e.g., Vitest) in the same directory.
 
+## Commit Guidelines
+
+### Message Format
+```
+#[프로젝트코드]/[문서번호]: [모듈] 개발 내용
+```
+- 문서번호가 없는 경우 `noref` 사용: `#VK/noref: [SERVER] 컴파일 오류 수정`
+
+### Module Names
+변경된 파일이 속한 최상위 디렉토리/crate의 **대문자명**을 사용한다. 모듈이 없거나 루트 파일만 변경 시 생략 가능.
+
+| 변경 파일 경로 | 모듈 |
+|---|---|
+| `crates/server/src/**` | `[SERVER]` |
+| `crates/db/src/**` | `[DB]` |
+| `crates/services/src/**` | `[SERVICES]` |
+| `crates/git/src/**` | `[GIT]` |
+| `crates/executors/src/**` | `[EXECUTORS]` |
+| `crates/deployment/src/**` | `[DEPLOYMENT]` |
+| `crates/local-deployment/src/**` | `[LOCAL-DEPLOYMENT]` |
+| `crates/remote/src/**` | `[REMOTE]` |
+| `crates/review/src/**` | `[REVIEW]` |
+| `crates/utils/src/**` | `[UTILS]` |
+| `frontend/src/**` | `[FRONTEND]` |
+| `shared/**` | `[SHARED]` |
+
+### Commit Unit
+변경사항이 있는 **모듈별로 커밋을 분리**한다.
+
+```
+#VK/10543: [DB] workspace_count 필드 및 delete_all_by_task_id 추가
+#VK/10543: [SERVER] reset_to_todo 핸들러 구현
+#VK/10543: [FRONTEND] Reset to Todo 다이얼로그 및 칸반 인터셉트
+```
+
 ## Security & Config Tips
-- Use `.env` for local overrides; never commit secrets. Key envs: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST` 
+- Use `.env` for local overrides; never commit secrets. Key envs: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST`
 - Dev ports and assets are managed by `scripts/setup-dev-environment.js`.
