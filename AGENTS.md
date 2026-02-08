@@ -73,6 +73,33 @@ Do not manually edit shared/types.ts, instead edit crates/server/src/bin/generat
 #VK/10543: [FRONTEND] Reset to Todo 다이얼로그 및 칸반 인터셉트
 ```
 
+## Architecture & Patterns
+
+### Backend (Rust/Axum)
+- **Deployment trait**: 모든 서비스 접근은 `Deployment` trait을 통해 이루어진다. local-deployment(SQLite)가 주요 개발 대상.
+- **Handler 패턴**: `State(deployment)` + `Extension(resource)` + `Json(payload)` → `Result<ResponseJson<ApiResponse<T>>, ApiError>`
+- **Middleware**: `load_task_middleware` 등으로 요청 전 리소스 로딩 후 `Extension`에 삽입.
+- **DB 모델**: `crates/db/src/models/`에 모델별 파일. static method로 DB 조작. `sqlx::query_as!` 매크로 사용.
+- **마이그레이션 추가 시**: SQL 작성 → `pnpm run prepare-db` → `.sqlx/` 변경사항 커밋 필수.
+
+### Frontend (React/TypeScript)
+- **서버 상태**: TanStack Query (`hooks/use*.ts`), **UI 상태**: Zustand (`stores/*.ts`)
+- **Dialog**: 반드시 `@ebay/nice-modal-react`로 래핑. ESLint가 강제함.
+- **ui-new 규칙**: `views/`는 프레젠테이션 전용 (useState, useEffect, API 호출 금지). `containers/`에 로직 배치.
+- **API 클라이언트**: `frontend/src/lib/api.ts`의 네임스페이스 객체 (`tasksApi`, `doorayApi` 등)
+
+## Key Development Rules
+- **shared/types.ts 직접 수정 금지**: `pnpm run generate-types`로만 갱신. 소스는 `crates/server/src/bin/generate_types.rs`.
+- **Dooray 연동**: 백엔드가 프록시 역할. 프론트에서 Dooray 토큰 직접 사용 금지. 상세는 [docs/dev/dooray-integration.md](docs/dev/dooray-integration.md) 참조.
+- **Branch naming**: Dooray 태스크 연결 시 `feature/develop/{dooray_number}` 형식 자동 생성.
+- **SQLx offline**: DB 스키마 변경 후 `pnpm run prepare-db` 실행 + `.sqlx/` 커밋 필수. 안 하면 CI 실패.
+
+## Detailed Documentation
+| 문서 | 내용 |
+|------|------|
+| [docs/dev/architecture.md](docs/dev/architecture.md) | 백엔드/프론트엔드 아키텍처 패턴, 도메인 모델, 핸들러/미들웨어 구조 |
+| [docs/dev/dooray-integration.md](docs/dev/dooray-integration.md) | Dooray API 연동 구조, 동기화 흐름, 설정 관리, 설계 세션 |
+
 ## Security & Config Tips
 - Use `.env` for local overrides; never commit secrets. Key envs: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST`
 - Dev ports and assets are managed by `scripts/setup-dev-environment.js`.
