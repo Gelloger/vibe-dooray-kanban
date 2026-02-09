@@ -10,6 +10,7 @@ use db::{
     DBService,
     models::{
         coding_agent_turn::{CodingAgentTurn, CreateCodingAgentTurn},
+        design_message::{DesignMessage, DesignMessageRole},
         execution_process::{
             CreateExecutionProcess, ExecutionContext, ExecutionProcess, ExecutionProcessError,
             ExecutionProcessRunReason, ExecutionProcessStatus,
@@ -1141,7 +1142,37 @@ pub trait ContainerService {
         )
         .await?;
 
-        let prompt = task.to_prompt();
+        let mut prompt = task.to_prompt();
+
+        // If task has design session, append design conversation to prompt
+        if let Some(design_session_id) = task.design_session_id {
+            match DesignMessage::find_by_session_id(&self.db().pool, design_session_id).await {
+                Ok(messages) if !messages.is_empty() => {
+                    prompt.push_str("\n\n--- Design Phase Discussion ---\n\n");
+                    for msg in &messages {
+                        let role = match msg.role {
+                            DesignMessageRole::User => "User",
+                            DesignMessageRole::Assistant => "Assistant",
+                        };
+                        prompt.push_str(&format!("[{}]: {}\n\n", role, msg.content));
+                    }
+                    prompt.push_str("--- End Design Discussion ---\n");
+                    tracing::info!(
+                        task_id = %task.id,
+                        message_count = messages.len(),
+                        "Included design conversation in coding agent prompt"
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        task_id = %task.id,
+                        error = %e,
+                        "Failed to load design messages, continuing without them"
+                    );
+                }
+            }
+        }
 
         let repos_with_setup: Vec<_> = repos.iter().filter(|r| r.setup_script.is_some()).collect();
 
