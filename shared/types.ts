@@ -382,7 +382,12 @@ export type AddDesignMessageRequest = { content: string, role: DesignMessageRole
 
 export type DesignSessionWithMessages = { session: Session, messages: Array<DesignMessage>, };
 
-export type DesignChatRequest = { message: string, };
+export type DesignChatRequest = { message: string, 
+/**
+ * When true, skip saving messages to DB and skip loading conversation history.
+ * Used by changelog generation to avoid context accumulation across steps.
+ */
+skip_history: boolean | null, };
 
 export type DesignChatResponse = { user_message: DesignMessage, assistant_message: DesignMessage, };
 

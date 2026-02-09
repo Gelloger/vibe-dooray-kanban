@@ -464,14 +464,18 @@ export const tasksApi = {
   sendDesignChatStream: async function* (
     taskId: string,
     message: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: { skipHistory?: boolean }
   ): AsyncGenerator<DesignChatStreamEvent> {
     const response = await fetch(
       `/api/tasks/${taskId}/design-session/chat/stream`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          ...(options?.skipHistory && { skip_history: true }),
+        }),
         signal,
       }
     );

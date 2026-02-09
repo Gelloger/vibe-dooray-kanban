@@ -26,13 +26,15 @@ interface UseChangelogGeneratorProps {
 async function collectAiResponse(
   taskId: string,
   prompt: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { skipHistory?: boolean }
 ): Promise<string> {
   let result = '';
   for await (const event of tasksApi.sendDesignChatStream(
     taskId,
     prompt,
-    signal
+    signal,
+    options
   )) {
     if (signal?.aborted) break;
     if (event.type === 'AssistantChunk') {
@@ -93,12 +95,25 @@ export function useChangelogGenerator({
 
       // Get design messages (works with taskId alone, no sessionId needed)
       let designMessages = '';
+      const MAX_DESIGN_MSG_CHARS = 20_000;
       try {
         const sessionFull = await tasksApi.getDesignSessionFull(taskId);
         if (sessionFull.messages && sessionFull.messages.length > 0) {
-          designMessages = sessionFull.messages
-            .map((m) => `[${m.role}]: ${m.content}`)
-            .join('\n\n');
+          // Take recent messages and limit total size
+          const recentMsgs = sessionFull.messages.slice(-20);
+          let parts: string[] = [];
+          let totalLen = 0;
+          for (const m of [...recentMsgs].reverse()) {
+            const part = `[${m.role}]: ${m.content}`;
+            totalLen += part.length;
+            if (totalLen > MAX_DESIGN_MSG_CHARS && parts.length > 0) {
+              parts.push('[... earlier messages truncated ...]');
+              break;
+            }
+            parts.push(part);
+          }
+          parts.reverse();
+          designMessages = parts.join('\n\n');
 
           // If we didn't have a sessionId, try getting conversation from the design session
           if (!conversationSummary && sessionFull.session?.id) {
@@ -117,28 +132,47 @@ export function useChangelogGenerator({
         try {
           const messages = await tasksApi.getDesignMessages(taskId);
           if (messages.length > 0) {
-            designMessages = messages
-              .map((m) => `[${m.role}]: ${m.content}`)
-              .join('\n\n');
+            const recentFallback = messages.slice(-20);
+            let fbParts: string[] = [];
+            let fbLen = 0;
+            for (const m of [...recentFallback].reverse()) {
+              const part = `[${m.role}]: ${m.content}`;
+              fbLen += part.length;
+              if (fbLen > MAX_DESIGN_MSG_CHARS && fbParts.length > 0) {
+                fbParts.push('[... earlier messages truncated ...]');
+                break;
+              }
+              fbParts.push(part);
+            }
+            fbParts.reverse();
+            designMessages = fbParts.join('\n\n');
           }
         } catch {
           // No design messages available
         }
       }
 
-      // Also fetch Dooray task body for comparison
+      // Also fetch Dooray task body for comparison (limit to recent comments)
       let doorayTaskBody = '';
+      const MAX_COMMENT_CHARS = 20_000;
       try {
         const comments = await doorayApi.getComments(
           doorayProjectId,
           doorayTaskId
         );
         if (comments.comments.length > 0) {
-          // Collect all comments as context
-          const allComments = comments.comments
-            .map((c) => c.content)
-            .join('\n---\n');
-          doorayTaskBody = allComments;
+          // Take only recent comments and limit total size
+          let accumulated = '';
+          const recentComments = comments.comments.slice(-20);
+          for (const c of recentComments) {
+            const entry = c.content + '\n---\n';
+            if (accumulated.length + entry.length > MAX_COMMENT_CHARS) {
+              accumulated = '[... earlier comments truncated ...]\n---\n' + accumulated;
+              break;
+            }
+            accumulated += entry;
+          }
+          doorayTaskBody = accumulated;
         }
       } catch (err) {
         console.warn('[Changelog] Failed to fetch Dooray comments:', err);
@@ -177,7 +211,8 @@ ${sessionContext}
         step1Result = await collectAiResponse(
           taskId,
           step1Prompt,
-          controller.signal
+          controller.signal,
+          { skipHistory: true }
         );
       } else {
         step1Result = '(세션 대화 데이터를 사용할 수 없습니다)';
@@ -234,7 +269,8 @@ ${existingChangelogContext ? `## Dooray 태스크 기존 정보\n${existingChang
       const step3Result = await collectAiResponse(
         taskId,
         step3Prompt,
-        controller.signal
+        controller.signal,
+        { skipHistory: true }
       );
 
       // === Step 4: Generate final changelog ===
@@ -268,7 +304,8 @@ ${step3Result}
       const changelog = await collectAiResponse(
         taskId,
         step4Prompt,
-        controller.signal
+        controller.signal,
+        { skipHistory: true }
       );
 
       setState({

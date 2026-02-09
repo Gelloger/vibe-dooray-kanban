@@ -641,6 +641,10 @@ pub struct DesignSessionWithMessages {
 #[derive(Debug, Deserialize, TS)]
 pub struct DesignChatRequest {
     pub message: String,
+    /// When true, skip saving messages to DB and skip loading conversation history.
+    /// Used by changelog generation to avoid context accumulation across steps.
+    #[serde(default)]
+    pub skip_history: Option<bool>,
 }
 
 /// Response from AI chat in design session
@@ -688,7 +692,9 @@ pub async fn design_chat(
     let existing_messages = DesignMessage::find_by_session_id(pool, design_session_id).await?;
 
     // Call Claude CLI for AI response
-    let ai_response = call_claude_for_design(&existing_messages, &payload.message, &task).await?;
+    let ai_response =
+        call_claude_for_design(&existing_messages, &payload.message, &task, design_session_id)
+            .await?;
 
     // Save assistant message
     let assistant_message = DesignMessage::create(
@@ -712,19 +718,11 @@ async fn call_claude_for_design(
     messages: &[DesignMessage],
     user_message: &str,
     task: &Task,
+    design_session_id: Uuid,
 ) -> Result<String, ApiError> {
-    // Build conversation history
-    let conversation = messages
+    let can_resume = messages
         .iter()
-        .map(|m| {
-            let role = match m.role {
-                DesignMessageRole::User => "User",
-                DesignMessageRole::Assistant => "Assistant",
-            };
-            format!("[{}]: {}", role, m.content)
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
+        .any(|m| m.role == DesignMessageRole::Assistant);
 
     let system_prompt = "You are a helpful assistant for software design discussions. \
         Help the user plan and design their implementation. \
@@ -732,29 +730,63 @@ async fn call_claude_for_design(
 
     let task_description = task.description.as_deref().unwrap_or("(no description)");
 
-    let full_prompt = if conversation.is_empty() {
+    // When resuming, CLI already has conversation context — only send new message.
+    let prompt = if can_resume {
+        user_message.to_string()
+    } else {
         format!(
             "{}\n\nTask Title: {}\nTask Description: {}\n\nUser: {}",
             system_prompt, task.title, task_description, user_message
         )
-    } else {
-        format!(
-            "{}\n\nTask Title: {}\nTask Description: {}\n\nPrevious conversation:\n{}\n\nUser: {}",
-            system_prompt, task.title, task_description, conversation, user_message
-        )
     };
 
     // Call claude CLI with timeout (uses existing authentication from ~/.claude.json)
-    tracing::debug!("Calling claude CLI for design chat");
+    tracing::debug!("Calling claude CLI for design chat (resume={})", can_resume);
+
+    // Build CLI args: use --resume for ongoing sessions, --session-id for new ones
+    let cli_session_id_str = design_session_id.to_string();
+    let mut cli_args = vec![
+        "--print",
+        "--tools=Read,Glob,Grep,Edit,Write,WebSearch,WebFetch,LSP",
+        "--permission-mode=bypassPermissions",
+    ];
+    if can_resume {
+        cli_args.extend(["--resume", &cli_session_id_str]);
+    } else {
+        cli_args.extend(["--session-id", &cli_session_id_str]);
+    }
+
+    // Spawn CLI and write prompt via stdin to avoid ARG_MAX limit (os error 7)
+    let mut child = tokio::process::Command::new("claude")
+        .args(&cli_args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            tracing::error!("Failed to spawn claude CLI: {}", e);
+            ApiError::BadRequest(format!(
+                "Failed to spawn claude CLI: {}. Make sure claude is installed and authenticated.",
+                e
+            ))
+        })?;
+
+    // Write prompt to stdin and close it
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            ApiError::BadRequest("Failed to open claude CLI stdin".to_string())
+        })?;
+        stdin.write_all(prompt.as_bytes()).await.map_err(|e| {
+            tracing::error!("Failed to write prompt to claude CLI stdin: {}", e);
+            ApiError::BadRequest(format!("Failed to write prompt to claude CLI: {}", e))
+        })?;
+        drop(stdin); // Close stdin to signal EOF
+    }
 
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(120), // 2 minute timeout
-        tokio::process::Command::new("claude")
-            .args(["--print", &full_prompt])
-            .stdin(std::process::Stdio::null()) // Prevent waiting for stdin
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
+        child.wait_with_output(),
     )
     .await
     .map_err(|_| {
@@ -857,32 +889,35 @@ pub async fn design_chat_stream(
         session.id
     };
 
-    // Save user message
-    let user_message = DesignMessage::create(
-        &pool,
-        design_session_id,
-        &CreateDesignMessage {
-            role: DesignMessageRole::User,
-            content: payload.message.clone(),
-        },
-    )
-    .await?;
+    let skip_history = payload.skip_history.unwrap_or(false);
 
-    // Get existing messages for context
-    let existing_messages = DesignMessage::find_by_session_id(&pool, design_session_id).await?;
+    // Check if CLI session can be resumed (has prior assistant messages)
+    let can_resume = if !skip_history {
+        let existing_messages =
+            DesignMessage::find_by_session_id(&pool, design_session_id).await?;
+        existing_messages
+            .iter()
+            .any(|m| m.role == DesignMessageRole::Assistant)
+    } else {
+        false
+    };
 
-    // Build the prompt
-    let conversation = existing_messages
-        .iter()
-        .map(|m| {
-            let role = match m.role {
-                DesignMessageRole::User => "User",
-                DesignMessageRole::Assistant => "Assistant",
-            };
-            format!("[{}]: {}", role, m.content)
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    // Save user message (skip when caller provides all context inline, e.g. changelog generation)
+    let user_message = if !skip_history {
+        Some(
+            DesignMessage::create(
+                &pool,
+                design_session_id,
+                &CreateDesignMessage {
+                    role: DesignMessageRole::User,
+                    content: payload.message.clone(),
+                },
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
 
     let system_prompt = "You are a helpful assistant for software design discussions. \
         Help the user plan and design their implementation. \
@@ -890,15 +925,14 @@ pub async fn design_chat_stream(
 
     let task_description = task.description.as_deref().unwrap_or("(no description)");
 
-    let full_prompt = if conversation.is_empty() {
+    // When resuming, CLI already has conversation context — only send new message.
+    // Otherwise, send full context (system prompt + task info + user message).
+    let prompt = if can_resume {
+        payload.message.clone()
+    } else {
         format!(
             "{}\n\nTask Title: {}\nTask Description: {}\n\nUser: {}",
             system_prompt, task.title, task_description, payload.message
-        )
-    } else {
-        format!(
-            "{}\n\nTask Title: {}\nTask Description: {}\n\nPrevious conversation:\n{}\n\nUser: {}",
-            system_prompt, task.title, task_description, conversation, payload.message
         )
     };
 
@@ -916,28 +950,37 @@ pub async fn design_chat_stream(
 
     // Create the SSE stream using Claude CLI --print mode with streaming
     let stream = async_stream::stream! {
-        // First, send the saved user message
-        let user_event = DesignChatStreamEvent::UserMessageSaved {
-            message: user_message.clone(),
-        };
-        yield Ok(Event::default().json_data(&user_event).unwrap());
+        // Send the saved user message (only when history is being tracked)
+        if let Some(ref user_msg) = user_message {
+            let user_event = DesignChatStreamEvent::UserMessageSaved {
+                message: user_msg.clone(),
+            };
+            yield Ok(Event::default().json_data(&user_event).unwrap());
+        }
 
-        // Spawn Claude CLI in --print mode with streaming JSON output
-        // --print mode is required for --include-partial-messages to work
-        // Use repo directory as working directory for CLI to enable read-only tools
-        // Note: Claude CLI doesn't have --allowedTools option
-        // Tools are determined by the working directory context
+        // Build CLI args: use --resume for ongoing sessions, --session-id for new ones
+        let cli_session_id_str = design_session_id.to_string();
+        let mut cli_args = vec![
+            "-y",
+            "@anthropic-ai/claude-code",
+            "--print",
+            "--output-format=stream-json",
+            "--include-partial-messages",
+            "--verbose",
+            "--tools=Read,Glob,Grep,Edit,Write,WebSearch,WebFetch,LSP",
+            "--permission-mode=bypassPermissions",
+        ];
+        if can_resume {
+            cli_args.extend(["--resume", &cli_session_id_str]);
+        } else if !skip_history {
+            cli_args.extend(["--session-id", &cli_session_id_str]);
+        } else {
+            cli_args.push("--no-session-persistence");
+        }
+
         let mut child = match Command::new("npx")
-            .args([
-                "-y",
-                "@anthropic-ai/claude-code",
-                "--print",
-                "--output-format=stream-json",
-                "--include-partial-messages",
-                "--verbose",
-                &full_prompt,
-            ])
-            .stdin(Stdio::null())
+            .args(&cli_args)
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .current_dir(&working_dir)
@@ -955,6 +998,20 @@ pub async fn design_chat_stream(
                 return;
             }
         };
+
+        // Write prompt via stdin to avoid ARG_MAX limit (os error 7)
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+                tracing::error!("Failed to write prompt to Claude CLI stdin: {}", e);
+                let error_event = DesignChatStreamEvent::Error {
+                    message: format!("Failed to write prompt to Claude CLI: {}", e),
+                };
+                yield Ok(Event::default().json_data(&error_event).unwrap());
+                return;
+            }
+            drop(stdin); // Close stdin to signal EOF
+        }
 
         let stdout = match child.stdout.take() {
             Some(stdout) => stdout,
@@ -994,7 +1051,12 @@ pub async fn design_chat_stream(
         // Read streaming output
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
-        let mut full_response = String::new();
+        // Text accumulated from stream_event deltas (token-by-token)
+        let mut streamed_text = String::new();
+        // Final result text from CLI (complete response for DB save)
+        let mut final_result_text = String::new();
+        // Track emitted tool_use IDs to prevent duplicates from partial messages
+        let mut emitted_tool_ids = std::collections::HashSet::<String>::new();
 
         loop {
             line.clear();
@@ -1019,37 +1081,41 @@ pub async fn design_chat_stream(
                     if let Ok(envelope) = serde_json::from_str::<cli_protocol::SdkEventEnvelope>(trimmed) {
                         match envelope.type_.as_str() {
                             "assistant" => {
-                                // Handle text and tool_use blocks in assistant messages
+                                // Only process tool_use blocks from assistant messages.
+                                // Text is handled exclusively by stream_event to avoid
+                                // duplication issues with partial messages.
                                 if let Some(message) = envelope.properties.get("message") {
                                     if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
                                         for block in content {
-                                            let block_type = block.get("type").and_then(|t| t.as_str());
-
-                                            if block_type == Some("text") {
-                                                // Extract text content from assistant message
-                                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                                                    if !text.is_empty() && !full_response.contains(text) {
-                                                        let chunk_event = DesignChatStreamEvent::AssistantChunk {
-                                                            content: text.to_string(),
-                                                        };
-                                                        yield Ok(Event::default().json_data(&chunk_event).unwrap());
-                                                        full_response.push_str(text);
-                                                    }
-                                                }
-                                            } else if block_type == Some("tool_use") {
-                                                let tool_name = block.get("name")
-                                                    .and_then(|n| n.as_str())
-                                                    .unwrap_or("unknown")
+                                            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                                                let tool_id = block.get("id")
+                                                    .and_then(|id| id.as_str())
+                                                    .unwrap_or("")
                                                     .to_string();
-                                                let tool_input = block.get("input")
-                                                    .cloned()
-                                                    .unwrap_or(serde_json::Value::Null);
+                                                // Only emit complete tool_use (has non-null input)
+                                                // and hasn't been emitted yet
+                                                let has_input = block.get("input")
+                                                    .map_or(false, |i| !i.is_null());
 
-                                                let tool_event = DesignChatStreamEvent::ToolUse {
-                                                    tool_name,
-                                                    tool_input,
-                                                };
-                                                yield Ok(Event::default().json_data(&tool_event).unwrap());
+                                                if has_input && (tool_id.is_empty() || !emitted_tool_ids.contains(&tool_id)) {
+                                                    if !tool_id.is_empty() {
+                                                        emitted_tool_ids.insert(tool_id);
+                                                    }
+
+                                                    let tool_name = block.get("name")
+                                                        .and_then(|n| n.as_str())
+                                                        .unwrap_or("unknown")
+                                                        .to_string();
+                                                    let tool_input = block.get("input")
+                                                        .cloned()
+                                                        .unwrap_or(serde_json::Value::Null);
+
+                                                    let tool_event = DesignChatStreamEvent::ToolUse {
+                                                        tool_name,
+                                                        tool_input,
+                                                    };
+                                                    yield Ok(Event::default().json_data(&tool_event).unwrap());
+                                                }
                                             }
                                         }
                                     }
@@ -1098,7 +1164,7 @@ pub async fn design_chat_stream(
                                 }
                             }
                             "stream_event" => {
-                                // Token-by-token streaming via stream_event
+                                // Token-by-token streaming via stream_event (primary text source)
                                 // event.type = "content_block_delta", event.delta.text contains the token
                                 if let Some(event) = envelope.properties.get("event") {
                                     if event.get("type").and_then(|t| t.as_str()) == Some("content_block_delta") {
@@ -1109,7 +1175,7 @@ pub async fn design_chat_stream(
                                                         content: text.to_string(),
                                                     };
                                                     yield Ok(Event::default().json_data(&chunk_event).unwrap());
-                                                    full_response.push_str(text);
+                                                    streamed_text.push_str(text);
                                                 }
                                             }
                                         }
@@ -1117,17 +1183,15 @@ pub async fn design_chat_stream(
                                 }
                             }
                             "result" => {
-                                // CLI is done - extract final text if available
+                                // CLI is done - extract final text for database save
                                 if let Some(result) = envelope.properties.get("result").and_then(|r| r.as_str()) {
-                                    if full_response.is_empty() {
-                                        full_response = result.to_string();
-                                    }
+                                    final_result_text = result.to_string();
                                 }
                                 tracing::debug!("Got result, CLI complete");
                                 break;
                             }
-                            _ => {
-                                // Other event types (system, etc.) - ignore
+                            other => {
+                                tracing::debug!("Unhandled CLI event type: {}", other);
                             }
                         }
                     }
@@ -1154,34 +1218,44 @@ pub async fn design_chat_stream(
         // Wait for the process to finish
         let _ = child.wait().await;
 
-        // Save assistant message to database
-        if !full_response.trim().is_empty() {
-            let assistant_message = match DesignMessage::create(
-                &pool,
-                design_session_id,
-                &CreateDesignMessage {
-                    role: DesignMessageRole::Assistant,
-                    content: full_response.trim().to_string(),
-                },
-            )
-            .await
-            {
-                Ok(msg) => msg,
-                Err(e) => {
-                    tracing::error!("Failed to save assistant message: {}", e);
-                    let error_event = DesignChatStreamEvent::Error {
-                        message: format!("Failed to save response: {}", e),
-                    };
-                    yield Ok(Event::default().json_data(&error_event).unwrap());
-                    return;
-                }
-            };
+        // Save assistant message to database (skip when skip_history is true)
+        // Prefer final_result_text (complete response from CLI), fall back to streamed text
+        let response_to_save = if !final_result_text.trim().is_empty() {
+            final_result_text.trim().to_string()
+        } else {
+            streamed_text.trim().to_string()
+        };
 
-            // Send completion event
-            let complete_event = DesignChatStreamEvent::AssistantComplete {
-                message: assistant_message,
-            };
-            yield Ok(Event::default().json_data(&complete_event).unwrap());
+        if !response_to_save.is_empty() {
+            if !skip_history {
+                let assistant_message = match DesignMessage::create(
+                    &pool,
+                    design_session_id,
+                    &CreateDesignMessage {
+                        role: DesignMessageRole::Assistant,
+                        content: response_to_save,
+                    },
+                )
+                .await
+                {
+                    Ok(msg) => msg,
+                    Err(e) => {
+                        tracing::error!("Failed to save assistant message: {}", e);
+                        let error_event = DesignChatStreamEvent::Error {
+                            message: format!("Failed to save response: {}", e),
+                        };
+                        yield Ok(Event::default().json_data(&error_event).unwrap());
+                        return;
+                    }
+                };
+
+                // Send completion event
+                let complete_event = DesignChatStreamEvent::AssistantComplete {
+                    message: assistant_message,
+                };
+                yield Ok(Event::default().json_data(&complete_event).unwrap());
+            }
+            // skip_history mode: response was streamed but not saved to DB
         } else {
             tracing::warn!("No response received from Claude CLI");
             let error_event = DesignChatStreamEvent::Error {
