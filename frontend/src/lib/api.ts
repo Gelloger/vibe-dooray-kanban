@@ -869,16 +869,89 @@ export const attemptsApi = {
 
   previewPRDescription: async (
     attemptId: string,
-    repoId: string
+    repoId: string,
+    targetBranch?: string
   ): Promise<{ title: string; body: string }> => {
     const response = await makeRequest(
       `/api/task-attempts/${attemptId}/pr/preview`,
       {
         method: 'POST',
-        body: JSON.stringify({ repo_id: repoId }),
+        body: JSON.stringify({
+          repo_id: repoId,
+          target_branch: targetBranch ?? null,
+        }),
       }
     );
     return handleApiResponse<{ title: string; body: string }>(response);
+  },
+
+  generatePrSummary: async function* (
+    attemptId: string,
+    repoId: string,
+    targetBranch: string,
+    signal?: AbortSignal
+  ): AsyncGenerator<{ type: string; data: string }> {
+    const response = await makeRequest(
+      `/api/task-attempts/${attemptId}/pr/generate-summary`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          repo_id: repoId,
+          target_branch: targetBranch,
+        }),
+        signal,
+      }
+    );
+
+    if (!response.ok) {
+      throw new ApiError(
+        `Failed to generate PR summary: ${response.status}`,
+        response.status
+      );
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (!data) continue;
+            try {
+              yield JSON.parse(data);
+            } catch {
+              // Ignore invalid JSON
+            }
+          }
+        }
+      }
+
+      // Flush remaining buffer after stream ends
+      if (buffer.trim() && buffer.startsWith('data: ')) {
+        const data = buffer.slice(6).trim();
+        if (data) {
+          try {
+            yield JSON.parse(data);
+          } catch {
+            // Ignore invalid JSON
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   },
 
   startDevServer: async (attemptId: string): Promise<ExecutionProcess[]> => {

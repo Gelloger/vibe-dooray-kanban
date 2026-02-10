@@ -120,7 +120,7 @@ export default defineConfig({
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq, req) => {
             // Set longer timeout for streaming endpoints
-            if (req.url?.includes('/stream')) {
+            if (req.url?.includes('/stream') || req.url?.includes('/generate-summary')) {
               proxyReq.setTimeout(300000); // 5 minutes
             }
           });

@@ -148,6 +148,8 @@
     "selectBaseBranch": "기본 브랜치 선택",
     "draftLabel": "초안으로 만들기",
     "autoGenerateLabel": "AI 에이전트에게 더 나은 PR 설명 생성 요청",
+    "generateSummary": "요약 생성",
+    "generatingSummary": "생성 중...",
     "creating": "생성 중...",
     "createButton": "PR 생성",
     "errors": {

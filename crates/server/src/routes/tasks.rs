@@ -891,13 +891,15 @@ pub async fn design_chat_stream(
 
     let skip_history = payload.skip_history.unwrap_or(false);
 
-    // Check if CLI session can be resumed (has prior assistant messages)
+    // Check if CLI session can be resumed (has any prior messages)
+    // Note: We check for ANY message, not just assistant messages, because
+    // if the stream was interrupted mid-response, the assistant message won't
+    // be saved but the user message will. Using --resume in this case allows
+    // the CLI to continue from its session file context.
     let can_resume = if !skip_history {
         let existing_messages =
             DesignMessage::find_by_session_id(&pool, design_session_id).await?;
-        existing_messages
-            .iter()
-            .any(|m| m.role == DesignMessageRole::Assistant)
+        !existing_messages.is_empty()
     } else {
         false
     };

@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::{convert::Infallible, path::PathBuf};
 
 use axum::{
     Extension, Json,
     extract::{Query, State},
-    response::Json as ResponseJson,
+    response::{Json as ResponseJson, Sse, sse::Event},
 };
 use db::models::{
     coding_agent_turn::CodingAgentTurn,
@@ -22,7 +22,7 @@ use executors::actions::{
     ExecutorAction, ExecutorActionType, coding_agent_follow_up::CodingAgentFollowUpRequest,
     coding_agent_initial::CodingAgentInitialRequest,
 };
-use git::{GitCliError, GitRemote, GitServiceError};
+use git::{GitCli, GitCliError, GitRemote, GitServiceError};
 use serde::{Deserialize, Serialize};
 use services::services::{
     container::ContainerService,
@@ -114,6 +114,7 @@ pub struct GetPrCommentsQuery {
 #[derive(Debug, Deserialize, TS)]
 pub struct PreviewPrDescriptionRequest {
     pub repo_id: Uuid,
+    pub target_branch: Option<String>,
 }
 
 /// Response for PR description preview
@@ -757,13 +758,20 @@ pub async fn get_pr_comments(
 pub async fn preview_pr_description(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
-    Json(_request): Json<PreviewPrDescriptionRequest>,
+    Json(request): Json<PreviewPrDescriptionRequest>,
 ) -> Result<ResponseJson<ApiResponse<PreviewPrDescriptionResponse, ()>>, ApiError> {
     let pool = &deployment.db().pool;
 
     // Get task info for Dooray integration
     let task = workspace.parent_task(pool).await?;
     let dooray_settings = DooraySettings::get(pool).await.ok().flatten();
+
+    // Get git diff info if target_branch is provided
+    let git_summary = if let Some(ref target_branch) = request.target_branch {
+        get_git_change_summary(&deployment, &workspace, request.repo_id, target_branch).await
+    } else {
+        None
+    };
 
     // Determine if we have Dooray info
     let has_dooray = task
@@ -798,6 +806,14 @@ pub async fn preview_pr_description(
             dooray_project_name, dooray_task_number, task_title
         );
 
+        let comment_section = match git_summary {
+            Some(ref summary) => format!(
+                "## Comment\n### 변경사항\n{}\n\n> {}\n",
+                summary.commit_log, summary.diff_stat
+            ),
+            None => "## Comment\n".to_string(),
+        };
+
         let body = format!(
             r#"## Dooray Issue
 * https://{}/popup/project/projects/{}/{}
@@ -814,9 +830,8 @@ pub async fn preview_pr_description(
 * [ ] 테스트 추가
 * [ ] Comment 추가
 
-## Comment
-"#,
-            dooray_domain, dooray_project_name, dooray_task_number
+{}"#,
+            dooray_domain, dooray_project_name, dooray_task_number, comment_section
         );
 
         (title, body)
@@ -826,13 +841,22 @@ pub async fn preview_pr_description(
             .as_ref()
             .map(|t| t.title.clone())
             .unwrap_or_else(|| "Untitled".to_string());
-        let task_description = task
-            .as_ref()
-            .and_then(|t| t.description.clone())
-            .unwrap_or_default();
 
         let title = format!("{} (vibe-kanban)", task_title);
-        let body = task_description;
+
+        let body = match git_summary {
+            Some(ref summary) => format!(
+                "## Changes\n### Commits\n```\n{}\n```\n\n### Files Changed\n```\n{}\n```\n",
+                summary.commit_log, summary.diff_stat
+            ),
+            None => {
+                let task_description = task
+                    .as_ref()
+                    .and_then(|t| t.description.clone())
+                    .unwrap_or_default();
+                task_description
+            }
+        };
 
         (title, body)
     };
@@ -840,6 +864,308 @@ pub async fn preview_pr_description(
     Ok(ResponseJson(ApiResponse::success(
         PreviewPrDescriptionResponse { title, body },
     )))
+}
+
+struct GitChangeSummary {
+    commit_log: String,
+    diff_stat: String,
+}
+
+/// Get git change summary (commit log + diff stat) for a workspace
+async fn get_git_change_summary(
+    deployment: &DeploymentImpl,
+    workspace: &Workspace,
+    repo_id: Uuid,
+    target_branch: &str,
+) -> Option<GitChangeSummary> {
+    let pool = &deployment.db().pool;
+
+    let repo = Repo::find_by_id(pool, repo_id).await.ok()??;
+
+    let container_ref = workspace.container_ref.as_ref()?;
+    let worktree_path = PathBuf::from(container_ref).join(&repo.name);
+
+    if !worktree_path.exists() {
+        return None;
+    }
+
+    let cli = GitCli::new();
+    let range = format!("{}..HEAD", target_branch);
+
+    // Commit messages only (no SHA), formatted as markdown list
+    let commit_log = cli
+        .git(
+            &worktree_path,
+            ["log", "--pretty=format:- %s", "--reverse", &range],
+        )
+        .unwrap_or_default();
+
+    let diff_shortstat = cli
+        .git(&worktree_path, ["diff", "--shortstat", &range])
+        .unwrap_or_default();
+
+    if commit_log.is_empty() && diff_shortstat.is_empty() {
+        return None;
+    }
+
+    Some(GitChangeSummary {
+        commit_log: commit_log.trim().to_string(),
+        diff_stat: diff_shortstat.trim().to_string(),
+    })
+}
+
+/// Request for AI-powered PR summary generation
+#[derive(Debug, Deserialize, TS)]
+pub struct GeneratePrSummaryRequest {
+    pub repo_id: Uuid,
+    pub target_branch: String,
+}
+
+/// SSE event types for PR summary streaming
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", content = "data")]
+pub enum PrSummaryStreamEvent {
+    Chunk(String),
+    Complete(String),
+    Error(String),
+}
+
+/// Stream AI-generated PR summary based on git diff analysis
+pub async fn generate_pr_summary(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Json(request): Json<GeneratePrSummaryRequest>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::process::Command;
+
+    let pool = &deployment.db().pool;
+
+    // Get repo and worktree path
+    let repo = Repo::find_by_id(pool, request.repo_id)
+        .await?
+        .ok_or(RepoError::NotFound)?;
+
+    let container_ref = workspace
+        .container_ref
+        .as_ref()
+        .ok_or(ApiError::BadRequest("No container for workspace".into()))?;
+    let worktree_path = PathBuf::from(container_ref).join(&repo.name);
+
+    // Get git diff
+    let cli = GitCli::new();
+    let range = format!("{}..HEAD", request.target_branch);
+
+    let diff_output = cli
+        .git(&worktree_path, ["diff", &range])
+        .unwrap_or_default();
+
+    // Truncate very large diffs to avoid token limits
+    let max_diff_len = 50_000;
+    let diff_for_prompt = if diff_output.len() > max_diff_len {
+        format!(
+            "{}\n\n... (diff truncated, {} more bytes)",
+            &diff_output[..max_diff_len],
+            diff_output.len() - max_diff_len
+        )
+    } else {
+        diff_output.clone()
+    };
+
+    // Get task info for context
+    let task = workspace.parent_task(pool).await?.map(|t| t.title.clone());
+    let task_title = task.unwrap_or_else(|| "(untitled)".to_string());
+
+    let prompt = format!(
+        r#"다음은 `{target_branch}` 브랜치 대비 현재 브랜치의 git diff입니다.
+
+이 변경사항을 분석하여 PR의 Comment 섹션에 넣을 요약을 작성해주세요.
+
+규칙:
+- 변경사항별로 한 줄씩 "- [유형] 설명" 형식으로 작성 (예: "- [기능 추가] 사용자 인증 로직 구현")
+- 유형: 기능 추가, 기능 수정, 버그 수정, 리팩토링, 설정 변경, 테스트, 문서 등
+- 간결하고 명확하게, 개발자가 리뷰할 때 도움이 되도록
+- 파일명이나 코드보다는 기능/동작 중심으로 설명
+- 한국어로 작성
+- 마크다운 형식 없이 순수 텍스트 리스트만 출력 (제목이나 코드블록 없이)
+
+태스크: {task_title}
+
+```diff
+{diff_for_prompt}
+```"#,
+        target_branch = request.target_branch,
+        task_title = task_title,
+        diff_for_prompt = diff_for_prompt,
+    );
+
+    let working_dir = worktree_path.to_string_lossy().to_string();
+    let is_empty_diff = diff_output.trim().is_empty();
+
+    let stream = async_stream::stream! {
+        if is_empty_diff {
+            let event = PrSummaryStreamEvent::Error("No changes found between branches".to_string());
+            yield Ok(Event::default().json_data(&event).unwrap());
+            return;
+        }
+
+        let cli_args = vec![
+            "-y",
+            "@anthropic-ai/claude-code",
+            "--print",
+            "--output-format=stream-json",
+            "--verbose",
+            "--no-session-persistence",
+            "--permission-mode=bypassPermissions",
+        ];
+
+        let mut child = match Command::new("npx")
+            .args(&cli_args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .current_dir(&working_dir)
+            .env("NPM_CONFIG_LOGLEVEL", "error")
+            .kill_on_drop(true)
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(e) => {
+                tracing::error!("Failed to spawn Claude CLI for PR summary: {}", e);
+                let event = PrSummaryStreamEvent::Error(format!("Failed to spawn Claude CLI: {}", e));
+                yield Ok(Event::default().json_data(&event).unwrap());
+                return;
+            }
+        };
+
+        // Write prompt via stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+                tracing::error!("Failed to write prompt to CLI stdin: {}", e);
+                let event = PrSummaryStreamEvent::Error(format!("Failed to send prompt: {}", e));
+                yield Ok(Event::default().json_data(&event).unwrap());
+                return;
+            }
+            drop(stdin);
+        }
+
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let event = PrSummaryStreamEvent::Error("Failed to get CLI stdout".to_string());
+                yield Ok(Event::default().json_data(&event).unwrap());
+                return;
+            }
+        };
+
+        // Consume stderr in background and log for debugging
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
+            Some(tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                let mut stderr_output = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let trimmed = line.trim();
+                            if !trimmed.is_empty() {
+                                tracing::warn!("[PR Summary CLI stderr] {}", trimmed);
+                                stderr_output.push_str(trimmed);
+                                stderr_output.push('\n');
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+                stderr_output
+            }))
+        } else {
+            None
+        };
+
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let mut full_text = String::new();
+
+        loop {
+            line.clear();
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(120),
+                reader.read_line(&mut line)
+            ).await {
+                Ok(Ok(0)) => break,
+                Ok(Ok(_)) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() { continue; }
+                    tracing::trace!("[PR Summary CLI stdout] {}", &trimmed[..trimmed.len().min(200)]);
+
+                    if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                        let type_ = envelope.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        match type_ {
+                            "stream_event" => {
+                                if let Some(event) = envelope.get("event") {
+                                    if event.get("type").and_then(|t| t.as_str()) == Some("content_block_delta") {
+                                        if let Some(text) = event
+                                            .get("delta")
+                                            .and_then(|d| d.get("text"))
+                                            .and_then(|t| t.as_str())
+                                        {
+                                            if !text.is_empty() {
+                                                full_text.push_str(text);
+                                                let chunk = PrSummaryStreamEvent::Chunk(text.to_string());
+                                                yield Ok(Event::default().json_data(&chunk).unwrap());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "result" => {
+                                if let Some(result) = envelope.get("result").and_then(|r| r.as_str()) {
+                                    full_text = result.to_string();
+                                }
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    let event = PrSummaryStreamEvent::Error(format!("Read error: {}", e));
+                    yield Ok(Event::default().json_data(&event).unwrap());
+                    break;
+                }
+                Err(_) => {
+                    let event = PrSummaryStreamEvent::Error("Timed out".to_string());
+                    yield Ok(Event::default().json_data(&event).unwrap());
+                    break;
+                }
+            }
+        }
+
+        let exit_status = child.wait().await;
+        tracing::info!("[PR Summary CLI] exit status: {:?}, text length: {}", exit_status, full_text.len());
+
+        // Collect stderr for error reporting
+        if let Some(handle) = stderr_handle {
+            if let Ok(stderr_output) = handle.await {
+                if !stderr_output.is_empty() && full_text.trim().is_empty() {
+                    let event = PrSummaryStreamEvent::Error(
+                        format!("CLI error: {}", stderr_output.lines().last().unwrap_or(&stderr_output))
+                    );
+                    yield Ok(Event::default().json_data(&event).unwrap());
+                    return;
+                }
+            }
+        }
+
+        let complete = PrSummaryStreamEvent::Complete(full_text.trim().to_string());
+        yield Ok(Event::default().json_data(&complete).unwrap());
+    };
+
+    Ok(Sse::new(stream))
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
