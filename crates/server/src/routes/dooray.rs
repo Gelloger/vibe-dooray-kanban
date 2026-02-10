@@ -1377,9 +1377,6 @@ fn create_dooray_client(token: &str) -> Result<reqwest::Client, ApiError> {
         format!("dooray-api {}", clean_token)
     };
 
-    tracing::debug!("Creating Dooray client with auth header length: {}", auth_value.len());
-    tracing::debug!("Auth header prefix: {}", &auth_value[..auth_value.len().min(20)]);
-
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&auth_value)
