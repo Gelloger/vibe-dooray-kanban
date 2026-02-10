@@ -1178,16 +1178,11 @@ impl ContainerService for LocalContainerService {
 
         let config = self.config.read().await;
         let commit_reminder_enabled = config.commit_reminder_enabled;
-        let commit_reminder_prompt = config
+        let base_commit_prompt = config
             .commit_reminder_prompt
             .clone()
             .unwrap_or_else(|| DEFAULT_COMMIT_REMINDER_PROMPT.to_string());
         drop(config);
-        let mut env = ExecutionEnv::new(
-            repo_context,
-            commit_reminder_enabled,
-            commit_reminder_prompt,
-        );
 
         // Load task and project context for environment variables
         let task = workspace
@@ -1201,12 +1196,39 @@ impl ContainerService for LocalContainerService {
             .await?
             .ok_or(ContainerError::Other(anyhow!("Project not found for task")))?;
 
+        // Dooray 컨텍스트가 있으면 커밋 컨벤션 규칙을 commit reminder에 추가
+        let commit_reminder_prompt = if let Some(ref dooray_number) = task.dooray_task_number {
+            format!(
+                "{base_commit_prompt}\n\n\
+                ## Commit Convention Rules\n\
+                - Message format: `#{dooray_number}: [MODULE] 개발 내용`\n\
+                - MODULE: 변경된 파일의 최상위 디렉토리/모듈의 대문자명 (예: [API], [BATCH], [COMMON])\n\
+                - Split commits by module - separate commits for different modules\n\
+                - Never use AI conversation text as commit messages\n\
+                - Never commit: .vscode/, docs/plans/, CLAUDE.md, *.sql scripts, swagger JSON"
+            )
+        } else {
+            base_commit_prompt
+        };
+
+        let mut env = ExecutionEnv::new(
+            repo_context,
+            commit_reminder_enabled,
+            commit_reminder_prompt,
+        );
+
         env.insert("VK_PROJECT_NAME", &project.name);
         env.insert("VK_PROJECT_ID", project.id.to_string());
         env.insert("VK_TASK_ID", task.id.to_string());
         env.insert("VK_WORKSPACE_ID", workspace.id.to_string());
         env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
         env.insert("VK_SESSION_ID", execution_process.session_id.to_string());
+        if let Some(ref dooray_task_number) = task.dooray_task_number {
+            env.insert("VK_DOORAY_TASK_NUMBER", dooray_task_number);
+        }
+        if let Some(ref dooray_project_id) = task.dooray_project_id {
+            env.insert("VK_DOORAY_PROJECT_ID", dooray_project_id);
+        }
 
         // Create the child and stream, add to execution tracker with timeout
         let mut spawned = tokio::time::timeout(

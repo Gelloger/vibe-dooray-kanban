@@ -20,7 +20,11 @@ Analyze the changes in this branch and write:
 
 Use the appropriate CLI tool to update the PR (gh pr edit for GitHub, az repos pr update for Azure DevOps)."#;
 
-pub const DEFAULT_COMMIT_REMINDER_PROMPT: &str = "There are uncommitted changes. Please stage and commit them now with a descriptive commit message.";
+pub const DEFAULT_COMMIT_REMINDER_PROMPT: &str = "There are uncommitted changes. Please stage and commit them now.\n\n\
+Rules:\n\
+- Write a concise, descriptive commit message (not AI conversation text)\n\
+- Split commits by module if changes span multiple modules\n\
+- Do NOT commit development artifacts (.vscode/, docs/plans/, CLAUDE.md, plan documents, SQL scripts)";
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
