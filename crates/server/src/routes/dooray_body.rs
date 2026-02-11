@@ -189,7 +189,7 @@ pub(crate) fn build_mention_html(info: &TaskMentionInfo) -> String {
     )
 }
 
-fn html_escape(s: &str) -> String {
+pub(crate) fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")

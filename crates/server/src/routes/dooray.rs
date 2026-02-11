@@ -37,6 +37,8 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/dooray/projects/{dooray_project_id}/templates", get(get_dooray_templates))
         .route("/dooray/projects/{dooray_project_id}/templates/{template_id}", get(get_dooray_template))
         .route("/dooray/cross-reference", post(create_cross_reference))
+        .route("/dooray/projects/{dooray_project_id}/members", get(get_dooray_members))
+        .route("/dooray/change-assignee", post(change_assignee))
 }
 
 // ============== Settings Endpoints ==============
@@ -589,6 +591,19 @@ pub struct CrossReferenceRequest {
     pub source_task_id: Uuid,
 }
 
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct DoorayMember {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, TS)]
+pub struct ChangeAssigneeRequest {
+    pub target_url: String,
+    pub member_id: String,
+    pub member_name: String,
+}
+
 async fn sync_dooray_tasks(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<SyncRequest>,
@@ -1021,11 +1036,18 @@ struct DoorayMembersApiResponse {
 struct DoorayProjectMember {
     #[serde(rename = "organizationMemberId")]
     organization_member_id: Option<String>,
-    member: Option<DoorayMemberInfo>,
+}
+
+// Member detail API response: GET /common/v1/members/{memberId}
+#[derive(Debug, Deserialize)]
+struct DoorayMemberDetailResponse {
+    result: Option<DoorayMemberDetail>,
+    #[allow(dead_code)]
+    header: DoorayApiHeader,
 }
 
 #[derive(Debug, Deserialize)]
-struct DoorayMemberInfo {
+struct DoorayMemberDetail {
     name: Option<String>,
 }
 
@@ -1037,16 +1059,16 @@ async fn get_dooray_comments(
     let client = create_dooray_client(&settings.dooray_token)?;
 
     // First, fetch project members to build ID -> name mapping
-    let member_names: std::collections::HashMap<String, String> = match client
-        .get(format!(
-            "{}/project/v1/projects/{}/members?size=100",
-            DOORAY_API_BASE, dooray_project_id
-        ))
-        .send()
-        .await
-    {
-        Ok(response) => {
-            response
+    let member_names: std::collections::HashMap<String, String> = {
+        let member_ids: Vec<String> = match client
+            .get(format!(
+                "{}/project/v1/projects/{}/members?size=100",
+                DOORAY_API_BASE, dooray_project_id
+            ))
+            .send()
+            .await
+        {
+            Ok(response) => response
                 .json::<DoorayMembersApiResponse>()
                 .await
                 .ok()
@@ -1054,16 +1076,34 @@ async fn get_dooray_comments(
                 .map(|members| {
                     members
                         .into_iter()
-                        .filter_map(|m| {
-                            let id = m.organization_member_id?;
-                            let name = m.member.and_then(|mi| mi.name)?;
-                            Some((id, name))
-                        })
+                        .filter_map(|m| m.organization_member_id)
                         .collect()
                 })
-                .unwrap_or_default()
-        }
-        Err(_) => std::collections::HashMap::new(),
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+        // Enrich with names via /common/v1/members/{id}
+        let futs: Vec<_> = member_ids
+            .into_iter()
+            .map(|id| {
+                let c = client.clone();
+                async move {
+                    let resp = c
+                        .get(format!("{}/common/v1/members/{}", DOORAY_API_BASE, id))
+                        .send()
+                        .await
+                        .ok()?;
+                    let detail: DoorayMemberDetailResponse = resp.json().await.ok()?;
+                    let name = detail.result?.name?;
+                    Some((id, name))
+                }
+            })
+            .collect();
+        futures_util::future::join_all(futs)
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
     };
 
     // Dooray API: GET /project/v1/projects/{projectId}/posts/{postId}/logs
@@ -1468,6 +1508,168 @@ async fn create_cross_reference(
         success: true,
         message: "대상 태스크에 참조가 등록되었습니다.".to_string(),
     })))
+}
+
+// ============== Dooray Members Endpoint ==============
+
+async fn get_dooray_members(
+    State(deployment): State<DeploymentImpl>,
+    axum::extract::Path(dooray_project_id): axum::extract::Path<String>,
+) -> Result<ResponseJson<ApiResponse<Vec<DoorayMember>>>, ApiError> {
+    tracing::debug!("Fetching members for project {}", dooray_project_id);
+
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    // Step 1: Fetch project member IDs
+    let response = client
+        .get(format!(
+            "{}/project/v1/projects/{}/members",
+            DOORAY_API_BASE, dooray_project_id
+        ))
+        .query(&[("size", "100")])
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?;
+
+    if !response.status().is_success() {
+        tracing::warn!(
+            "Dooray members API returned status {} for project {}",
+            response.status(),
+            dooray_project_id
+        );
+        return Ok(ResponseJson(ApiResponse::error(
+            &format!("Dooray API 오류 (status: {})", response.status()),
+        )));
+    }
+
+    let api_response: DoorayMembersApiResponse = response
+        .json()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to parse Dooray response: {}", e)))?;
+
+    let member_ids: Vec<String> = api_response
+        .result
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|m| m.organization_member_id)
+        .collect();
+
+    tracing::debug!("Found {} member IDs, fetching details...", member_ids.len());
+
+    // Step 2: Fetch each member's detail (name) in parallel via /common/v1/members/{id}
+    let futures: Vec<_> = member_ids
+        .into_iter()
+        .map(|id| {
+            let client = client.clone();
+            async move {
+                let resp = client
+                    .get(format!("{}/common/v1/members/{}", DOORAY_API_BASE, id))
+                    .send()
+                    .await
+                    .ok()?;
+                let detail: DoorayMemberDetailResponse = resp.json().await.ok()?;
+                let name = detail.result?.name?;
+                Some(DoorayMember { id, name })
+            }
+        })
+        .collect();
+
+    let results = futures_util::future::join_all(futures).await;
+    let members: Vec<DoorayMember> = results.into_iter().flatten().collect();
+
+    tracing::debug!("Fetched {} members for project {}", members.len(), dooray_project_id);
+    Ok(ResponseJson(ApiResponse::success(members)))
+}
+
+// ============== Change Assignee Endpoint ==============
+
+async fn change_assignee(
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<ChangeAssigneeRequest>,
+) -> Result<ResponseJson<ApiResponse<CreateDoorayCommentResult>>, ApiError> {
+    use super::dooray_body::DOORAY_TASK_URL_RE;
+
+    // 1. Parse target_url to extract target_task_id
+    let target_task_id = DOORAY_TASK_URL_RE
+        .captures(&payload.target_url)
+        .and_then(|cap| cap.get(1).or_else(|| cap.get(2)))
+        .map(|m| m.as_str().to_string())
+        .ok_or_else(|| {
+            ApiError::BadRequest("유효한 Dooray 태스크 URL이 아닙니다.".to_string())
+        })?;
+
+    // 2. Get Dooray settings
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    let target_project_id = settings
+        .selected_project_id
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("Dooray 프로젝트가 설정되지 않았습니다.".to_string()))?;
+
+    // 3. Fetch organization ID from project detail
+    let project_response: DoorayApiResponse<DoorayProjectDetailForOrg> = client
+        .get(format!(
+            "{}/project/v1/projects/{}",
+            DOORAY_API_BASE, target_project_id
+        ))
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?
+        .json()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to parse project detail: {}", e)))?;
+
+    let org_id = project_response
+        .result
+        .and_then(|p| p.organization.map(|o| o.id))
+        .ok_or_else(|| ApiError::BadRequest("프로젝트의 조직 ID를 가져올 수 없습니다.".to_string()))?;
+
+    // 4. Build member mention in Dooray markdown format
+    // Format: ->[@name](dooray://ORG_ID/members/MEMBER_ID "member")
+    let mention_md = format!(
+        "->[@{}](dooray://{}/members/{} \"member\")",
+        payload.member_name, org_id, payload.member_id,
+    );
+
+    // 5. Post comment to target Dooray task
+    let response = client
+        .post(format!(
+            "{}/project/v1/projects/{}/posts/{}/logs",
+            DOORAY_API_BASE, target_project_id, target_task_id
+        ))
+        .json(&serde_json::json!({
+            "body": {
+                "mimeType": "text/x-markdown",
+                "content": mention_md
+            }
+        }))
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Ok(ResponseJson(ApiResponse::success(CreateDoorayCommentResult {
+            success: false,
+            message: "담당자 변경 코멘트 등록에 실패했습니다.".to_string(),
+        })));
+    }
+
+    Ok(ResponseJson(ApiResponse::success(CreateDoorayCommentResult {
+        success: true,
+        message: format!("담당자가 {}(으)로 변경되었습니다.", payload.member_name),
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayProjectDetailForOrg {
+    organization: Option<DoorayOrganizationRef>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayOrganizationRef {
+    id: String,
 }
 
 // ============== Dooray Templates Endpoints ==============

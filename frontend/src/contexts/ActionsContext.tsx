@@ -184,14 +184,22 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
   );
 
   // Open assignee selection dialog (uses dynamic import to avoid circular deps)
+  // Falls back to Dooray member selection when no organization is configured
   const openAssigneeSelection = useCallback(
     async (projectId: string, issueIds: string[], isCreateMode = false) => {
+      if (!selectedOrgId) {
+        const { DoorayMemberSelectionDialog } = await import(
+          '@/components/ui-new/dialogs/DoorayMemberSelectionDialog'
+        );
+        await DoorayMemberSelectionDialog.show({ issueIds, isCreateMode });
+        return;
+      }
       const { AssigneeSelectionDialog } = await import(
         '@/components/ui-new/dialogs/AssigneeSelectionDialog'
       );
       await AssigneeSelectionDialog.show({ projectId, issueIds, isCreateMode });
     },
-    []
+    [selectedOrgId]
   );
 
   // Open sub-issue selection dialog (uses dynamic import to avoid circular deps)

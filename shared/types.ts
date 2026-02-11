@@ -138,6 +138,10 @@ export type DoorayTemplateDetail = { id: string, templateName: string, body: Doo
 
 export type CrossReferenceRequest = { target_url: string, source_task_id: string, };
 
+export type DoorayMember = { id: string, name: string, };
+
+export type ChangeAssigneeRequest = { target_url: string, member_id: string, member_name: string, };
+
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 
 export type DraftWorkspaceData = { message: string, project_id: string | null, repos: Array<DraftWorkspaceRepo>, selected_profile: ExecutorProfileId | null, linked_issue: DraftWorkspaceLinkedIssue | null, };

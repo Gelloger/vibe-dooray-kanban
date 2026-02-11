@@ -20,6 +20,7 @@ import { GitActionsDialog } from '@/components/dialogs/tasks/GitActionsDialog';
 import { EditBranchNameDialog } from '@/components/dialogs/tasks/EditBranchNameDialog';
 import { CreateDoorayTaskDialog } from '@/components/dialogs/tasks/CreateDoorayTaskDialog';
 import { CrossReferenceDialog } from '@/components/dialogs/tasks/CrossReferenceDialog';
+import { ChangeAssigneeDialog } from '@/components/dialogs/tasks/ChangeAssigneeDialog';
 import { useProject } from '@/contexts/ProjectContext';
 import { openTaskForm } from '@/lib/openTaskForm';
 import { useDooraySettings } from '@/hooks/useDooray';
@@ -154,6 +155,15 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     }
   };
 
+  const handleChangeAssignee = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await ChangeAssigneeDialog.show({});
+    } catch {
+      // User cancelled
+    }
+  };
+
   const handleResetToTodo = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!projectId || !task) return;
@@ -247,6 +257,11 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
               {hasDoorayIntegration && (
                 <DropdownMenuItem onClick={handleCrossReference}>
                   태스크 참조 남기기
+                </DropdownMenuItem>
+              )}
+              {isConnected && (
+                <DropdownMenuItem onClick={handleChangeAssignee}>
+                  담당자 변경
                 </DropdownMenuItem>
               )}
               {task?.status !== 'todo' && (

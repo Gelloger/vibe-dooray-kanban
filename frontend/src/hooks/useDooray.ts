@@ -26,6 +26,7 @@ const DOORAY_KEYS = {
   tags: (projectId: string) => ['dooray', 'tags', projectId] as const,
   templates: (projectId: string) => ['dooray', 'templates', projectId] as const,
   template: (projectId: string, templateId: string) => ['dooray', 'template', projectId, templateId] as const,
+  members: (projectId: string) => ['dooray', 'members', projectId] as const,
 };
 
 /**
@@ -217,6 +218,35 @@ export function useDoorayTemplate(doorayProjectId: string | null, templateId: st
 
   return {
     template: template ?? null,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  };
+}
+
+/**
+ * Hook for fetching members of a Dooray project (on-demand)
+ */
+export function useDoorayMembers(doorayProjectId: string | null, enabled = false) {
+  const {
+    data: members,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: doorayProjectId ? DOORAY_KEYS.members(doorayProjectId) : ['dooray', 'members', 'none'],
+    queryFn: () => {
+      if (!doorayProjectId) return Promise.resolve([]);
+      return doorayApi.getMembers(doorayProjectId);
+    },
+    enabled: enabled && Boolean(doorayProjectId),
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  });
+
+  return {
+    members: members ?? [],
     isLoading,
     isError,
     error,

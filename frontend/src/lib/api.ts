@@ -104,6 +104,8 @@ import {
   CreateDoorayCommentRequest,
   CreateDoorayCommentResult,
   CrossReferenceRequest,
+  DoorayMember,
+  ChangeAssigneeRequest,
   GetDoorayCommentsResponse,
   CreateDoorayTaskRequest,
   CreateDoorayTaskResult,
@@ -1898,6 +1900,27 @@ export const doorayApi = {
    */
   crossReference: async (data: CrossReferenceRequest): Promise<CreateDoorayCommentResult> => {
     const response = await makeRequest('/api/dooray/cross-reference', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<CreateDoorayCommentResult>(response);
+  },
+
+  /**
+   * Get members of a Dooray project
+   */
+  getMembers: async (doorayProjectId: string): Promise<DoorayMember[]> => {
+    const response = await makeRequest(
+      `/api/dooray/projects/${doorayProjectId}/members`
+    );
+    return handleApiResponse<DoorayMember[]>(response);
+  },
+
+  /**
+   * Change the assignee of a Dooray task by posting a mention comment
+   */
+  changeAssignee: async (data: ChangeAssigneeRequest): Promise<CreateDoorayCommentResult> => {
+    const response = await makeRequest('/api/dooray/change-assignee', {
       method: 'POST',
       body: JSON.stringify(data),
     });

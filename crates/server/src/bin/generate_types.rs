@@ -60,6 +60,8 @@ fn generate_types_content() -> String {
         server::routes::dooray::DoorayTemplate::decl(),
         server::routes::dooray::DoorayTemplateDetail::decl(),
         server::routes::dooray::CrossReferenceRequest::decl(),
+        server::routes::dooray::DoorayMember::decl(),
+        server::routes::dooray::ChangeAssigneeRequest::decl(),
         db::models::scratch::DraftFollowUpData::decl(),
         db::models::scratch::DraftWorkspaceData::decl(),
         db::models::scratch::DraftWorkspaceLinkedIssue::decl(),
