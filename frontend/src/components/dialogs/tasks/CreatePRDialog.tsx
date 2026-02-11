@@ -134,6 +134,7 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
         setPrBody(baseBody);
 
         let aiContent = '';
+        let hasError = false;
         for await (const event of attemptsApi.generatePrSummary(
           attempt.id,
           repoId,
@@ -172,9 +173,13 @@ const CreatePRDialogImpl = NiceModal.create<CreatePRDialogProps>(
             }
           } else if (event.type === 'Error') {
             setError(event.data);
+            hasError = true;
+            break;
           }
         }
-        setSummaryGenerated(true);
+        if (!hasError) {
+          setSummaryGenerated(true);
+        }
       } catch (err) {
         if (abortController.signal.aborted) return;
         setError(

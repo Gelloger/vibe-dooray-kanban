@@ -13,6 +13,8 @@ pub struct DooraySettings {
     pub selected_tag_ids: Option<String>,
     /// Dooray domain (e.g., "nhnent.dooray.com")
     pub dooray_domain: Option<String>,
+    /// Current user's Dooray organizationMemberId
+    pub member_id: Option<String>,
     #[ts(type = "Date")]
     pub created_at: DateTime<Utc>,
     #[ts(type = "Date")]
@@ -28,6 +30,8 @@ pub struct CreateDooraySettings {
     pub selected_tag_ids: Option<String>,
     /// Dooray domain (e.g., "nhnent.dooray.com")
     pub dooray_domain: Option<String>,
+    /// Current user's Dooray organizationMemberId
+    pub member_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -42,7 +46,7 @@ impl DooraySettings {
     pub async fn get(pool: &SqlitePool) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             DooraySettings,
-            r#"SELECT id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain,
+            r#"SELECT id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain, member_id,
                       created_at as "created_at!: DateTime<Utc>",
                       updated_at as "updated_at!: DateTime<Utc>"
                FROM dooray_settings
@@ -62,16 +66,17 @@ impl DooraySettings {
 
         sqlx::query_as!(
             DooraySettings,
-            r#"INSERT INTO dooray_settings (id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain)
-               VALUES ($1, $2, $3, $4, $5, $6)
+            r#"INSERT INTO dooray_settings (id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain, member_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
                ON CONFLICT(id) DO UPDATE SET
                    dooray_token = excluded.dooray_token,
                    selected_project_id = excluded.selected_project_id,
                    selected_project_name = excluded.selected_project_name,
                    selected_tag_ids = excluded.selected_tag_ids,
                    dooray_domain = excluded.dooray_domain,
+                   member_id = excluded.member_id,
                    updated_at = CURRENT_TIMESTAMP
-               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain,
+               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain, member_id,
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             id,
@@ -79,7 +84,8 @@ impl DooraySettings {
             data.selected_project_id,
             data.selected_project_name,
             data.selected_tag_ids,
-            data.dooray_domain
+            data.dooray_domain,
+            data.member_id
         )
         .fetch_one(pool)
         .await
@@ -97,7 +103,7 @@ impl DooraySettings {
                SET selected_project_id = $1,
                    selected_project_name = $2,
                    updated_at = CURRENT_TIMESTAMP
-               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain,
+               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain, member_id,
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             project_id,
@@ -117,7 +123,7 @@ impl DooraySettings {
             r#"UPDATE dooray_settings
                SET selected_tag_ids = $1,
                    updated_at = CURRENT_TIMESTAMP
-               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain,
+               RETURNING id, dooray_token, selected_project_id, selected_project_name, selected_tag_ids, dooray_domain, member_id,
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             tag_ids

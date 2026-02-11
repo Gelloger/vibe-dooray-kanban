@@ -90,6 +90,25 @@ async fn save_settings(
         return Ok(ResponseJson(ApiResponse::error("Invalid Dooray token")));
     }
 
+    // Fetch current user's member ID for auto-assignee
+    let member_id = match client
+        .get(format!("{}/common/v1/members/me", DOORAY_API_BASE))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            resp.json::<DoorayMemberMeResponse>()
+                .await
+                .ok()
+                .and_then(|r| r.result)
+                .map(|m| m.id)
+        }
+        Ok(_) | Err(_) => {
+            tracing::warn!("Failed to fetch Dooray member info, assignee auto-set will be disabled");
+            None
+        }
+    };
+
     // Don't auto-set a default project - let user choose from project list
     let data = CreateDooraySettings {
         dooray_token: payload.dooray_token,
@@ -97,6 +116,7 @@ async fn save_settings(
         selected_project_name: payload.selected_project_name,
         selected_tag_ids: None,
         dooray_domain: payload.dooray_domain,
+        member_id,
     };
 
     let settings = DooraySettings::upsert(&deployment.db().pool, &data).await?;
@@ -969,6 +989,19 @@ struct DoorayLogCreator {
     organization_member_id: Option<String>,
 }
 
+// Current member API response types (GET /common/v1/members/me)
+#[derive(Debug, Deserialize)]
+struct DoorayMemberMeResponse {
+    result: Option<DoorayMemberMe>,
+    #[allow(dead_code)]
+    header: DoorayApiHeader,
+}
+
+#[derive(Debug, Deserialize)]
+struct DoorayMemberMe {
+    id: String,
+}
+
 // Member list API response types
 #[derive(Debug, Deserialize)]
 struct DoorayMembersApiResponse {
@@ -1109,9 +1142,45 @@ async fn create_dooray_task(
     });
 
     if let Some(body_content) = &payload.body {
+        let project_code = settings
+            .selected_project_name
+            .as_deref()
+            .unwrap_or("PROJECT");
+
+        let processed_body = match super::dooray_body::process_body_with_mentions(
+            &client,
+            body_content,
+            DOORAY_API_BASE,
+            &payload.dooray_project_id,
+            project_code,
+        )
+        .await
+        {
+            Ok(body) => body,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to process body mentions, using raw body: {}",
+                    e
+                );
+                body_content.clone()
+            }
+        };
+
         request_body["body"] = serde_json::json!({
             "mimeType": "text/x-markdown",
-            "content": body_content
+            "content": processed_body
+        });
+    }
+
+    // Add current user as assignee if member_id is available
+    if let Some(ref member_id) = settings.member_id {
+        request_body["users"] = serde_json::json!({
+            "to": [{
+                "type": "member",
+                "member": {
+                    "organizationMemberId": member_id
+                }
+            }]
         });
     }
 

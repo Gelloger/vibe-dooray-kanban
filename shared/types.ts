@@ -58,7 +58,11 @@ selected_tag_ids: string | null,
 /**
  * Dooray domain (e.g., "nhnent.dooray.com")
  */
-dooray_domain: string | null, created_at: Date, updated_at: Date, };
+dooray_domain: string | null, 
+/**
+ * Current user's Dooray organizationMemberId
+ */
+member_id: string | null, created_at: Date, updated_at: Date, };
 
 export type CreateDooraySettings = { dooray_token: string, selected_project_id: string | null, selected_project_name: string | null, 
 /**
@@ -68,7 +72,11 @@ selected_tag_ids: string | null,
 /**
  * Dooray domain (e.g., "nhnent.dooray.com")
  */
-dooray_domain: string | null, };
+dooray_domain: string | null, 
+/**
+ * Current user's Dooray organizationMemberId
+ */
+member_id: string | null, };
 
 export type UpdateDooraySettings = { dooray_token: string | null, selected_project_id: string | null, selected_project_name: string | null, };
 

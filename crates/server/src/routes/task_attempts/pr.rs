@@ -1100,7 +1100,7 @@ pub async fn generate_pr_summary(
                 Ok(Ok(_)) => {
                     let trimmed = line.trim();
                     if trimmed.is_empty() { continue; }
-                    tracing::trace!("[PR Summary CLI stdout] {}", &trimmed[..trimmed.len().min(200)]);
+                    tracing::trace!("[PR Summary CLI stdout] {}", &trimmed[..trimmed.floor_char_boundary(200)]);
 
                     if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(trimmed) {
                         let type_ = envelope.get("type").and_then(|t| t.as_str()).unwrap_or("");
@@ -1135,28 +1135,45 @@ pub async fn generate_pr_summary(
                 Ok(Err(e)) => {
                     let event = PrSummaryStreamEvent::Error(format!("Read error: {}", e));
                     yield Ok(Event::default().json_data(&event).unwrap());
-                    break;
+                    let _ = child.kill().await;
+                    return;
                 }
                 Err(_) => {
                     let event = PrSummaryStreamEvent::Error("Timed out".to_string());
                     yield Ok(Event::default().json_data(&event).unwrap());
-                    break;
+                    let _ = child.kill().await;
+                    return;
                 }
             }
         }
 
-        let exit_status = child.wait().await;
+        let exit_status = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            child.wait()
+        ).await {
+            Ok(status) => status.ok(),
+            Err(_) => {
+                tracing::warn!("[PR Summary CLI] child.wait() timed out after 10s, killing process");
+                let _ = child.kill().await;
+                None
+            }
+        };
         tracing::info!("[PR Summary CLI] exit status: {:?}, text length: {}", exit_status, full_text.len());
 
         // Collect stderr for error reporting
         if let Some(handle) = stderr_handle {
-            if let Ok(stderr_output) = handle.await {
-                if !stderr_output.is_empty() && full_text.trim().is_empty() {
-                    let event = PrSummaryStreamEvent::Error(
-                        format!("CLI error: {}", stderr_output.lines().last().unwrap_or(&stderr_output))
-                    );
-                    yield Ok(Event::default().json_data(&event).unwrap());
-                    return;
+            match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
+                Ok(Ok(stderr_output)) => {
+                    if !stderr_output.is_empty() && full_text.trim().is_empty() {
+                        let event = PrSummaryStreamEvent::Error(
+                            format!("CLI error: {}", stderr_output.lines().last().unwrap_or(&stderr_output))
+                        );
+                        yield Ok(Event::default().json_data(&event).unwrap());
+                        return;
+                    }
+                }
+                _ => {
+                    tracing::warn!("[PR Summary CLI] stderr collection timed out or failed");
                 }
             }
         }

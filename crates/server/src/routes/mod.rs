@@ -10,6 +10,7 @@ pub mod approvals;
 pub mod config;
 pub mod containers;
 pub mod dooray;
+pub mod dooray_body;
 pub mod filesystem;
 // pub mod github;
 pub mod events;
