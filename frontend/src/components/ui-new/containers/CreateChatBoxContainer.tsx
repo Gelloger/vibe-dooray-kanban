@@ -190,6 +190,7 @@ export function CreateChatBoxContainer() {
           dooray_task_id: null,
           dooray_project_id: null,
           dooray_task_number: null,
+          reference_dooray_url: null,
         },
         executor_profile_id: effectiveProfile,
         repos: repos.map((r) => ({

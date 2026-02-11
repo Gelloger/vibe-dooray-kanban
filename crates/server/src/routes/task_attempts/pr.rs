@@ -1265,6 +1265,7 @@ pub async fn create_workspace_from_pr(
         dooray_task_id: None,
         dooray_project_id: None,
         dooray_task_number: None,
+        reference_dooray_url: None,
     };
     let task = Task::create(pool, &create_task, task_id).await?;
 

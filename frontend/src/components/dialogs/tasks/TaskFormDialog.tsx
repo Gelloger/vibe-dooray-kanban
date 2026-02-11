@@ -193,6 +193,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         dooray_task_id: null,
         dooray_project_id: null,
         dooray_task_number: null,
+        reference_dooray_url: null,
       };
       const shouldAutoStart = value.autoStart && !forceCreateOnlyRef.current;
       if (shouldAutoStart) {

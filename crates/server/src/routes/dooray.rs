@@ -562,6 +562,8 @@ pub struct CreateDoorayTaskRequest {
     pub tag_ids: Option<Vec<String>>,
     /// Parent task ID for creating subtasks
     pub parent_task_id: Option<String>,
+    /// Reference Dooray task URL (e.g., QA task) for auto cross-reference
+    pub reference_dooray_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -709,6 +711,7 @@ async fn sync_dooray_tasks(
                 dooray_task_id: Some(dooray_task.id),
                 dooray_project_id: Some(payload.dooray_project_id.clone()),
                 dooray_task_number: Some(task_number),
+                reference_dooray_url: None,
             };
 
             let task_id = Uuid::new_v4();
@@ -826,6 +829,7 @@ async fn import_by_number(
         dooray_task_id: Some(dooray_task.id.clone()),
         dooray_project_id: Some(payload.dooray_project_id.clone()),
         dooray_task_number: Some(task_number),
+        reference_dooray_url: None,
     };
 
     let task_id = Uuid::new_v4();
@@ -915,6 +919,7 @@ async fn import_by_id(
         dooray_task_id: Some(payload.dooray_task_id.clone()),
         dooray_project_id: Some(payload.dooray_project_id.clone()),
         dooray_task_number: Some(task_number),
+        reference_dooray_url: None,
     };
 
     let task_id = Uuid::new_v4();
@@ -1219,8 +1224,28 @@ async fn create_dooray_task(
         });
     }
 
-    // Add current user as assignee if member_id is available
-    if let Some(ref member_id) = settings.member_id {
+    // Add current user as assignee
+    // Note: creator (등록자) is auto-set by Dooray based on API token owner
+    let member_id = if let Some(ref id) = settings.member_id {
+        Some(id.clone())
+    } else {
+        // member_id not stored yet - fetch it now
+        match client
+            .get(format!("{}/common/v1/members/me", DOORAY_API_BASE))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                resp.json::<DoorayMemberMeResponse>()
+                    .await
+                    .ok()
+                    .and_then(|r| r.result)
+                    .map(|m| m.id)
+            }
+            _ => None,
+        }
+    };
+    if let Some(ref member_id) = member_id {
         request_body["users"] = serde_json::json!({
             "to": [{
                 "type": "member",
@@ -1242,6 +1267,8 @@ async fn create_dooray_task(
     if let Some(ref parent_id) = payload.parent_task_id {
         request_body["parentPostId"] = serde_json::json!(parent_id);
     }
+
+    tracing::debug!("Dooray create task request body: {}", serde_json::to_string_pretty(&request_body).unwrap_or_default());
 
     let response = client
         .post(format!(
@@ -1345,17 +1372,85 @@ async fn create_dooray_task(
         dooray_task_id: Some(created_task.id.clone()),
         dooray_project_id: Some(payload.dooray_project_id.clone()),
         dooray_task_number: task_number,
+        reference_dooray_url: payload.reference_dooray_url.clone(),
     };
 
     let local_task_id = Uuid::new_v4();
     Task::create(&deployment.db().pool, &create_data, local_task_id).await?;
+
+    // Auto cross-reference: if reference_dooray_url is provided, post a reference comment to the target task
+    let mut cross_ref_message = None;
+    if let Some(ref reference_url) = payload.reference_dooray_url {
+        use super::dooray_body::{DOORAY_TASK_URL_RE, build_mention_html, fetch_task_detail};
+
+        let target_task_id = DOORAY_TASK_URL_RE
+            .captures(reference_url)
+            .and_then(|cap| cap.get(1).or_else(|| cap.get(2)))
+            .map(|m| m.as_str().to_string());
+
+        if let Some(target_task_id) = target_task_id {
+            // Fetch the newly created source task detail for mention HTML
+            let mention_info = fetch_task_detail(
+                &client,
+                DOORAY_API_BASE,
+                &payload.dooray_project_id,
+                &created_task.id,
+                project_code,
+            )
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(info) = mention_info {
+                let mention_html = build_mention_html(&info);
+
+                // Determine target project_id (use selected_project_id as default)
+                let target_project_id = settings
+                    .selected_project_id
+                    .as_deref()
+                    .unwrap_or(&payload.dooray_project_id);
+
+                let ref_response = client
+                    .post(format!(
+                        "{}/project/v1/projects/{}/posts/{}/logs",
+                        DOORAY_API_BASE, target_project_id, target_task_id
+                    ))
+                    .json(&serde_json::json!({
+                        "body": {
+                            "mimeType": "text/x-markdown",
+                            "content": mention_html
+                        }
+                    }))
+                    .send()
+                    .await;
+
+                match ref_response {
+                    Ok(resp) if resp.status().is_success() => {
+                        cross_ref_message = Some("참조도 자동 등록되었습니다.");
+                        tracing::debug!("Auto cross-reference posted successfully");
+                    }
+                    Ok(resp) => {
+                        tracing::warn!("Auto cross-reference failed with status: {}", resp.status());
+                    }
+                    Err(e) => {
+                        tracing::warn!("Auto cross-reference request failed: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    let message = match cross_ref_message {
+        Some(ref_msg) => format!("Dooray 태스크가 생성되었습니다. {}", ref_msg),
+        None => "Dooray 태스크가 생성되었습니다.".to_string(),
+    };
 
     Ok(ResponseJson(ApiResponse::success(CreateDoorayTaskResult {
         success: true,
         dooray_task_id: Some(created_task.id),
         dooray_task_number: created_task.number,
         local_task_id: Some(local_task_id),
-        message: "Dooray 태스크가 생성되었습니다.".to_string(),
+        message,
     })))
 }
 

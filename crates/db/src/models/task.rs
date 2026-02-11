@@ -38,6 +38,8 @@ pub struct Task {
     pub dooray_task_number: Option<String>, // For branch naming (e.g., "PROJECT-123")
     // Design session for pre-implementation planning
     pub design_session_id: Option<Uuid>,
+    // Reference Dooray task URL (e.g., QA task URL for auto cross-reference)
+    pub reference_dooray_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -83,6 +85,7 @@ pub struct CreateTask {
     pub dooray_task_id: Option<String>,
     pub dooray_project_id: Option<String>,
     pub dooray_task_number: Option<String>,
+    pub reference_dooray_url: Option<String>,
 }
 
 impl CreateTask {
@@ -101,6 +104,7 @@ impl CreateTask {
             dooray_task_id: None,
             dooray_project_id: None,
             dooray_task_number: None,
+            reference_dooray_url: None,
         }
     }
 }
@@ -145,6 +149,7 @@ impl Task {
   t.dooray_project_id,
   t.dooray_task_number,
   t.design_session_id             AS "design_session_id: Uuid",
+  t.reference_dooray_url,
 
   CASE WHEN EXISTS (
     SELECT 1
@@ -207,6 +212,7 @@ ORDER BY t.created_at DESC"#,
                     dooray_project_id: rec.dooray_project_id,
                     dooray_task_number: rec.dooray_task_number,
                     design_session_id: rec.design_session_id,
+                    reference_dooray_url: rec.reference_dooray_url,
                 },
                 has_in_progress_attempt: rec.has_in_progress_attempt != 0,
                 last_attempt_failed: rec.last_attempt_failed != 0,
@@ -221,7 +227,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_all(pool: &SqlitePool) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url
                FROM tasks
                ORDER BY created_at ASC"#
         )
@@ -232,7 +238,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url
                FROM tasks
                WHERE id = $1"#,
             id
@@ -244,7 +250,7 @@ ORDER BY t.created_at DESC"#,
     pub async fn find_by_rowid(pool: &SqlitePool, rowid: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url
                FROM tasks
                WHERE rowid = $1"#,
             rowid
@@ -260,7 +266,7 @@ ORDER BY t.created_at DESC"#,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url
                FROM tasks
                WHERE dooray_task_id = $1"#,
             dooray_task_id
@@ -277,9 +283,9 @@ ORDER BY t.created_at DESC"#,
         let status = data.status.clone().unwrap_or_default();
         sqlx::query_as!(
             Task,
-            r#"INSERT INTO tasks (id, project_id, title, description, status, parent_workspace_id, dooray_task_id, dooray_project_id, dooray_task_number)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid""#,
+            r#"INSERT INTO tasks (id, project_id, title, description, status, parent_workspace_id, dooray_task_id, dooray_project_id, dooray_task_number, reference_dooray_url)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url"#,
             task_id,
             data.project_id,
             data.title,
@@ -288,7 +294,8 @@ ORDER BY t.created_at DESC"#,
             data.parent_workspace_id,
             data.dooray_task_id,
             data.dooray_project_id,
-            data.dooray_task_number
+            data.dooray_task_number,
+            data.reference_dooray_url
         )
         .fetch_one(pool)
         .await
@@ -308,7 +315,7 @@ ORDER BY t.created_at DESC"#,
             r#"UPDATE tasks
                SET title = $3, description = $4, status = $5, parent_workspace_id = $6
                WHERE id = $1 AND project_id = $2
-               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid""#,
+               RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url"#,
             id,
             project_id,
             title,
@@ -374,7 +381,7 @@ ORDER BY t.created_at DESC"#,
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url
                FROM tasks
                WHERE design_session_id = $1"#,
             design_session_id
@@ -418,7 +425,7 @@ ORDER BY t.created_at DESC"#,
         // Find only child tasks that have this workspace as their parent
         sqlx::query_as!(
             Task,
-            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid"
+            r#"SELECT id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_workspace_id as "parent_workspace_id: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as "design_session_id: Uuid", reference_dooray_url
                FROM tasks
                WHERE parent_workspace_id = $1
                ORDER BY created_at DESC"#,

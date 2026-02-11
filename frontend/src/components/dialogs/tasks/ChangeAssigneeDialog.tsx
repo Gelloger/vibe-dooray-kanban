@@ -19,13 +19,15 @@ import { useDoorayMembers, useDooraySettings } from '@/hooks/useDooray';
 const DOORAY_URL_PATTERN =
   /https:\/\/[\w.-]+\.dooray\.com\/(?:project\/tasks\/\d+|task\/\d+\/\d+)/;
 
-export interface ChangeAssigneeDialogProps {}
+export interface ChangeAssigneeDialogProps {
+  defaultUrl?: string;
+}
 
 const ChangeAssigneeDialogImpl = NiceModal.create<ChangeAssigneeDialogProps>(
-  () => {
+  ({ defaultUrl }) => {
     const modal = useModal();
     const { settings } = useDooraySettings();
-    const [targetUrl, setTargetUrl] = useState('');
+    const [targetUrl, setTargetUrl] = useState(defaultUrl ?? '');
     const [selectedMember, setSelectedMember] =
       useState<DoorayMember | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);

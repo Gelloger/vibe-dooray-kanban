@@ -30,7 +30,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useCreateDoorayTask, useDooraySettings, useDoorayProjects, useDoorayTags } from '@/hooks/useDooray';
 import { useProjects } from '@/hooks/useProjects';
 import { tasksApi } from '@/lib/api';
-import { Loader2, Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle, Bot, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Eye, EyeOff, ExternalLink, AlertCircle, CheckCircle, Bot, ChevronDown, ChevronUp, Link } from 'lucide-react';
 import type { Project, PatchType } from 'shared/types';
 import { extractBmadOutput } from '@/utils/conversationUtils';
 import { streamJsonPatchEntries } from '@/utils/streamJsonPatchEntries';
@@ -38,6 +38,9 @@ import type { PatchTypeWithKey } from '@/hooks/useConversationHistory';
 import { AiSummaryPanel } from '../dooray-ai/AiSummaryPanel';
 import { AiSplitPanel } from '../dooray-ai/AiSplitPanel';
 import type { SplitTask, SummaryApplyMode } from '../dooray-ai/types';
+
+const DOORAY_URL_PATTERN =
+  /https:\/\/[\w.-]+\.dooray\.com\/(?:project\/tasks\/\d+|task\/\d+\/\d+)/;
 
 export interface CreateDoorayTaskDialogProps {
   initialTitle?: string;
@@ -48,6 +51,8 @@ export interface CreateDoorayTaskDialogProps {
   taskId?: string;
   /** If provided, the original task will be deleted after successful Dooray task creation */
   originalTaskId?: string;
+  /** Pre-filled reference Dooray URL (e.g., QA task URL) */
+  initialReferenceUrl?: string;
 }
 
 type FormValues = {
@@ -98,7 +103,7 @@ async function fetchExecutionProcessEntries(executionProcessId: string): Promise
 }
 
 const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>(
-  ({ initialTitle = '', initialBody = '', localProjectId: initialLocalProjectId, sessionId, taskId, originalTaskId }) => {
+  ({ initialTitle = '', initialBody = '', localProjectId: initialLocalProjectId, sessionId, taskId, originalTaskId, initialReferenceUrl = '' }) => {
     const modal = useModal();
     const { t } = useTranslation(['dooray', 'common']);
     const { createTask, isCreating } = useCreateDoorayTask();
@@ -110,6 +115,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
     const [message, setMessage] = useState<Message | null>(null);
     const [extractedTitle, setExtractedTitle] = useState(initialTitle);
     const [extractedBody, setExtractedBody] = useState(initialBody);
+    const [referenceUrl, setReferenceUrl] = useState(initialReferenceUrl);
 
     // AI Panel state
     const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -201,6 +207,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
         try {
           if (selectedSplitTasks.length > 0) {
             // Create parent task first
+            const validRefUrl = referenceUrl && DOORAY_URL_PATTERN.test(referenceUrl) ? referenceUrl : null;
             const parentResult = await createTask({
               dooray_project_id: settings.selected_project_id,
               subject: value.subject,
@@ -208,6 +215,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
               local_project_id: value.localProjectId,
               tag_ids: value.tagIds.length > 0 ? value.tagIds : null,
               parent_task_id: null,
+              reference_dooray_url: validRefUrl,
             });
 
             if (!parentResult.success || !parentResult.dooray_task_id) {
@@ -231,6 +239,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
                   local_project_id: value.localProjectId,
                   tag_ids: value.tagIds.length > 0 ? value.tagIds : null,
                   parent_task_id: parentResult.dooray_task_id,
+                  reference_dooray_url: null,
                 });
 
                 if (subtaskResult.success) {
@@ -272,6 +281,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
             setTimeout(() => modal.remove(), 1500);
           } else {
             // Single task creation (original logic)
+            const validRefUrl = referenceUrl && DOORAY_URL_PATTERN.test(referenceUrl) ? referenceUrl : null;
             const result = await createTask({
               dooray_project_id: settings.selected_project_id,
               subject: value.subject,
@@ -279,6 +289,7 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
               local_project_id: value.localProjectId,
               tag_ids: value.tagIds.length > 0 ? value.tagIds : null,
               parent_task_id: null,
+              reference_dooray_url: validRefUrl,
             });
 
             if (result.success) {
@@ -641,6 +652,29 @@ const CreateDoorayTaskDialogImpl = NiceModal.create<CreateDoorayTaskDialogProps>
                 </p>
               </div>
             )}
+
+            {/* Reference Dooray URL */}
+            <div className="space-y-2">
+              <Label htmlFor="reference-dooray-url" className="flex items-center gap-1">
+                <Link className="h-3.5 w-3.5" />
+                {t('dooray:createTask.referenceUrlLabel', '참조 태스크 URL')}
+              </Label>
+              <Input
+                id="reference-dooray-url"
+                value={referenceUrl}
+                onChange={(e) => setReferenceUrl(e.target.value)}
+                placeholder={t('dooray:createTask.referenceUrlPlaceholder', 'https://xxx.dooray.com/project/tasks/...')}
+                disabled={isCreating}
+              />
+              {referenceUrl && !DOORAY_URL_PATTERN.test(referenceUrl) && (
+                <p className="text-xs text-destructive">
+                  {t('dooray:createTask.invalidDoorayUrl', '유효한 Dooray 태스크 URL을 입력하세요.')}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {t('dooray:createTask.referenceUrlDescription', 'QA 태스크 등 참조할 태스크 URL을 입력하면, 생성 시 자동으로 참조가 등록됩니다.')}
+              </p>
+            </div>
 
             {/* Local Project Selection */}
             <div className="space-y-2">

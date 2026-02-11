@@ -40,13 +40,13 @@ export type UpdateTag = { tag_name: string | null, content: string | null, };
 
 export type TaskStatus = "todo" | "inprogress" | "inreview" | "done" | "cancelled";
 
-export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, design_session_id: string | null, };
+export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, design_session_id: string | null, reference_dooray_url: string | null, };
 
-export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, workspace_count: bigint, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, design_session_id: string | null, };
+export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, workspace_count: bigint, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, created_at: string, updated_at: string, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, design_session_id: string | null, reference_dooray_url: string | null, };
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
-export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, };
+export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, dooray_task_id: string | null, dooray_project_id: string | null, dooray_task_number: string | null, reference_dooray_url: string | null, };
 
 export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, };
 
@@ -128,7 +128,11 @@ export type CreateDoorayTaskRequest = { dooray_project_id: string, subject: stri
 /**
  * Parent task ID for creating subtasks
  */
-parent_task_id: string | null, };
+parent_task_id: string | null, 
+/**
+ * Reference Dooray task URL (e.g., QA task) for auto cross-reference
+ */
+reference_dooray_url: string | null, };
 
 export type CreateDoorayTaskResult = { success: boolean, dooray_task_id: string | null, dooray_task_number: number | null, local_task_id: string | null, message: string, };
 

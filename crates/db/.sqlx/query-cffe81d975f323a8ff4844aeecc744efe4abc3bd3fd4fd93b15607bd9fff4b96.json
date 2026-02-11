@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "INSERT INTO tasks (id, project_id, title, description, status, parent_workspace_id, dooray_task_id, dooray_project_id, dooray_task_number)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n               RETURNING id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as \"design_session_id: Uuid\"",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\", dooray_task_id, dooray_project_id, dooray_task_number, design_session_id as \"design_session_id: Uuid\", reference_dooray_url\n               FROM tasks\n               WHERE rowid = $1",
   "describe": {
     "columns": [
       {
@@ -62,10 +62,15 @@
         "name": "design_session_id: Uuid",
         "ordinal": 11,
         "type_info": "Text"
+      },
+      {
+        "name": "reference_dooray_url",
+        "ordinal": 12,
+        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 9
+      "Right": 1
     },
     "nullable": [
       true,
@@ -79,8 +84,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "33b8a2e935f86754164df2e52cab802231e0dda0e489bfdc727206028ac3fe1c"
+  "hash": "cffe81d975f323a8ff4844aeecc744efe4abc3bd3fd4fd93b15607bd9fff4b96"
 }

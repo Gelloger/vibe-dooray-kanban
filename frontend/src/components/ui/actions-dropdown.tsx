@@ -158,7 +158,9 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
   const handleChangeAssignee = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await ChangeAssigneeDialog.show({});
+      await ChangeAssigneeDialog.show({
+        defaultUrl: task?.reference_dooray_url ?? undefined,
+      });
     } catch {
       // User cancelled
     }
