@@ -36,6 +36,7 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/dooray/tasks/{dooray_task_id}", put(update_dooray_task))
         .route("/dooray/projects/{dooray_project_id}/templates", get(get_dooray_templates))
         .route("/dooray/projects/{dooray_project_id}/templates/{template_id}", get(get_dooray_template))
+        .route("/dooray/cross-reference", post(create_cross_reference))
 }
 
 // ============== Settings Endpoints ==============
@@ -580,6 +581,12 @@ pub struct UpdateDoorayTaskRequest {
 pub struct UpdateDoorayTaskResult {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Debug, Deserialize, TS)]
+pub struct CrossReferenceRequest {
+    pub target_url: String,
+    pub source_task_id: Uuid,
 }
 
 async fn sync_dooray_tasks(
@@ -1367,6 +1374,99 @@ async fn update_dooray_task(
     Ok(ResponseJson(ApiResponse::success(UpdateDoorayTaskResult {
         success: true,
         message: "Dooray 태스크가 업데이트되었습니다.".to_string(),
+    })))
+}
+
+// ============== Cross-Reference Endpoint ==============
+
+async fn create_cross_reference(
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<CrossReferenceRequest>,
+) -> Result<ResponseJson<ApiResponse<CreateDoorayCommentResult>>, ApiError> {
+    use super::dooray_body::{DOORAY_TASK_URL_RE, build_mention_html, fetch_task_detail};
+
+    // 1. Parse target_url to extract target_task_id
+    let target_task_id = DOORAY_TASK_URL_RE
+        .captures(&payload.target_url)
+        .and_then(|cap| cap.get(1).or_else(|| cap.get(2)))
+        .map(|m| m.as_str().to_string())
+        .ok_or_else(|| {
+            ApiError::BadRequest("유효한 Dooray 태스크 URL이 아닙니다.".to_string())
+        })?;
+
+    // 2. Look up the source task in local DB
+    let source_task = db::models::task::Task::find_by_id(&deployment.db().pool, payload.source_task_id)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("소스 태스크를 찾을 수 없습니다.".to_string()))?;
+
+    let source_dooray_task_id = source_task
+        .dooray_task_id
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("소스 태스크에 Dooray 연동 정보가 없습니다.".to_string()))?;
+
+    let source_dooray_project_id = source_task
+        .dooray_project_id
+        .as_deref()
+        .ok_or_else(|| ApiError::BadRequest("소스 태스크에 Dooray 프로젝트 정보가 없습니다.".to_string()))?;
+
+    // 3. Get Dooray settings
+    let settings = get_required_settings(&deployment).await?;
+    let client = create_dooray_client(&settings.dooray_token)?;
+
+    // 4. Determine target project_id (use selected_project_id or source task's project_id)
+    let target_project_id = settings
+        .selected_project_id
+        .as_deref()
+        .unwrap_or(source_dooray_project_id);
+
+    // 5. Get project code for the source task
+    let project_code = settings
+        .selected_project_name
+        .as_deref()
+        .unwrap_or("PROJECT");
+
+    // 6. Fetch source task detail from Dooray to build mention HTML
+    let mention_info = fetch_task_detail(
+        &client,
+        DOORAY_API_BASE,
+        source_dooray_project_id,
+        source_dooray_task_id,
+        project_code,
+    )
+    .await?
+    .ok_or_else(|| {
+        ApiError::BadRequest("소스 태스크의 Dooray 정보를 가져올 수 없습니다.".to_string())
+    })?;
+
+    // 7. Build mention HTML
+    let mention_html = build_mention_html(&mention_info);
+
+    // 8. Post comment to target task
+    let response = client
+        .post(format!(
+            "{}/project/v1/projects/{}/posts/{}/logs",
+            DOORAY_API_BASE, target_project_id, target_task_id
+        ))
+        .json(&serde_json::json!({
+            "body": {
+                "mimeType": "text/x-markdown",
+                "content": mention_html
+            }
+        }))
+        .send()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Dooray API error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Ok(ResponseJson(ApiResponse::success(CreateDoorayCommentResult {
+            success: false,
+            message: "대상 태스크에 참조 댓글 등록에 실패했습니다.".to_string(),
+        })));
+    }
+
+    Ok(ResponseJson(ApiResponse::success(CreateDoorayCommentResult {
+        success: true,
+        message: "대상 태스크에 참조가 등록되었습니다.".to_string(),
     })))
 }
 

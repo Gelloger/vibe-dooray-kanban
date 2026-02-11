@@ -103,6 +103,7 @@ import {
   SyncRequest,
   CreateDoorayCommentRequest,
   CreateDoorayCommentResult,
+  CrossReferenceRequest,
   GetDoorayCommentsResponse,
   CreateDoorayTaskRequest,
   CreateDoorayTaskResult,
@@ -1890,5 +1891,16 @@ export const doorayApi = {
   getTemplate: async (projectId: string, templateId: string): Promise<DoorayTemplateDetail> => {
     const response = await makeRequest(`/api/dooray/projects/${projectId}/templates/${templateId}`);
     return handleApiResponse<DoorayTemplateDetail>(response);
+  },
+
+  /**
+   * Create a cross-reference comment on the target Dooray task
+   */
+  crossReference: async (data: CrossReferenceRequest): Promise<CreateDoorayCommentResult> => {
+    const response = await makeRequest('/api/dooray/cross-reference', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<CreateDoorayCommentResult>(response);
   },
 };

@@ -19,6 +19,7 @@ import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDia
 import { GitActionsDialog } from '@/components/dialogs/tasks/GitActionsDialog';
 import { EditBranchNameDialog } from '@/components/dialogs/tasks/EditBranchNameDialog';
 import { CreateDoorayTaskDialog } from '@/components/dialogs/tasks/CreateDoorayTaskDialog';
+import { CrossReferenceDialog } from '@/components/dialogs/tasks/CrossReferenceDialog';
 import { useProject } from '@/contexts/ProjectContext';
 import { openTaskForm } from '@/lib/openTaskForm';
 import { useDooraySettings } from '@/hooks/useDooray';
@@ -143,6 +144,16 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
     });
   };
 
+  const handleCrossReference = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!task) return;
+    try {
+      await CrossReferenceDialog.show({ task });
+    } catch {
+      // User cancelled
+    }
+  };
+
   const handleResetToTodo = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!projectId || !task) return;
@@ -233,6 +244,11 @@ export function ActionsDropdown({ task, attempt }: ActionsDropdownProps) {
               <DropdownMenuItem disabled={!projectId} onClick={handleDuplicate}>
                 {t('actionsMenu.duplicate')}
               </DropdownMenuItem>
+              {hasDoorayIntegration && (
+                <DropdownMenuItem onClick={handleCrossReference}>
+                  태스크 참조 남기기
+                </DropdownMenuItem>
+              )}
               {task?.status !== 'todo' && (
                 <DropdownMenuItem
                   disabled={!projectId}

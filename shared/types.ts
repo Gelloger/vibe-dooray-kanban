@@ -136,6 +136,8 @@ export type DoorayTemplate = { id: string, templateName: string, };
 
 export type DoorayTemplateDetail = { id: string, templateName: string, body: DoorayTaskBody | null, guide: DoorayTaskBody | null, subject: string | null, };
 
+export type CrossReferenceRequest = { target_url: string, source_task_id: string, };
+
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 
 export type DraftWorkspaceData = { message: string, project_id: string | null, repos: Array<DraftWorkspaceRepo>, selected_profile: ExecutorProfileId | null, linked_issue: DraftWorkspaceLinkedIssue | null, };

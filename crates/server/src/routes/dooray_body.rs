@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use crate::error::ApiError;
 
 /// Dooray task URL pattern: https://{domain}/project/tasks/{taskId} or https://{domain}/task/{projectId}/{taskId}
-static DOORAY_TASK_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+pub(crate) static DOORAY_TASK_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"https://[\w.-]+\.dooray\.com/(?:project/tasks/(\d+)|task/\d+/(\d+))")
         .expect("Invalid regex")
 });
@@ -35,13 +35,13 @@ struct DoorayTaskProject {
 }
 
 /// Task info needed to build a rich mention
-struct TaskMentionInfo {
-    task_id: String,
-    number: i64,
-    subject: String,
-    workflow_class: String,
-    project_id: String,
-    project_code: String,
+pub(crate) struct TaskMentionInfo {
+    pub(crate) task_id: String,
+    pub(crate) number: i64,
+    pub(crate) subject: String,
+    pub(crate) workflow_class: String,
+    pub(crate) project_id: String,
+    pub(crate) project_code: String,
 }
 
 /// Process task body and convert Dooray task URLs to rich inline HTML mentions.
@@ -121,7 +121,7 @@ pub async fn process_body_with_mentions(
     Ok(result)
 }
 
-async fn fetch_task_detail(
+pub(crate) async fn fetch_task_detail(
     client: &reqwest::Client,
     dooray_api_base: &str,
     project_id: &str,
@@ -176,7 +176,7 @@ async fn fetch_task_detail(
     }))
 }
 
-fn build_mention_html(info: &TaskMentionInfo) -> String {
+pub(crate) fn build_mention_html(info: &TaskMentionInfo) -> String {
     let escaped_subject = html_escape(&info.subject);
     format!(
         r#"<a class="dooray-flavored-html-mention task-reference {wf}" href="/project/posts/{tid}" title="{wf}" target="_blank" rel="noopener noreferrer" data-dooray-href="dooray://{pid}/tasks/{tid}" data-id="{tid}">{code}/{num} | {subj}</a>"#,
