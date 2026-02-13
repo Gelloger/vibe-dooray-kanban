@@ -7,13 +7,13 @@
 </p>
 
 <h3 align="center">Vibe Kanban + Dooray</h3>
-<p align="center">NHN Dooray 프로젝트 관리와 AI 코딩 에이전트를 연결하는 칸반 보드</p>
+<p align="center">Dooray 프로젝트 관리와 AI 코딩 에이전트를 연결하는 칸반 보드</p>
 
 ---
 
 ## Overview
 
-[Vibe Kanban](https://github.com/BloopAI/vibe-kanban) 기반의 Dooray 통합 버전입니다. NHN Dooray의 태스크를 칸반 보드에서 관리하고, Claude Code 등 AI 코딩 에이전트로 작업을 수행할 수 있습니다.
+[Vibe Kanban](https://github.com/BloopAI/vibe-kanban) 기반의 Dooray 통합 버전입니다. Dooray의 태스크를 칸반 보드에서 관리하고, Claude Code 등 AI 코딩 에이전트로 작업을 수행할 수 있습니다.
 
 ### 주요 기능
 
@@ -32,7 +32,7 @@
 
 ### 사전 준비
 
-1. **Dooray 계정** — 프로젝트 접근 권한이 있는 NHN Dooray 계정
+1. **Dooray 계정** — 프로젝트 접근 권한이 있는 Dooray 계정
 2. **API 토큰** — Dooray API 인증용 토큰
 3. **코딩 에이전트** — Claude Code, Gemini CLI 등 하나 이상의 에이전트가 설치 및 인증된 상태
 
