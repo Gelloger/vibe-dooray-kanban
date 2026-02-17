@@ -941,6 +941,31 @@ async fn create_dooray_comment(
     let settings = get_required_settings(&deployment).await?;
     let client = create_dooray_client(&settings.dooray_token)?;
 
+    // Process content to convert task URLs to rich mentions
+    let project_code = settings
+        .selected_project_name
+        .as_deref()
+        .unwrap_or("PROJECT");
+
+    let processed_content = match super::dooray_body::process_body_with_mentions(
+        &client,
+        &payload.content,
+        DOORAY_API_BASE,
+        &payload.dooray_project_id,
+        project_code,
+    )
+    .await
+    {
+        Ok(content) => content,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to process content mentions, using raw content: {}",
+                e
+            );
+            payload.content.clone()
+        }
+    };
+
     // Dooray API: POST /project/v1/projects/{projectId}/posts/{postId}/logs
     let response = client
         .post(format!(
@@ -950,7 +975,7 @@ async fn create_dooray_comment(
         .json(&serde_json::json!({
             "body": {
                 "mimeType": "text/x-markdown",
-                "content": payload.content
+                "content": processed_content
             }
         }))
         .send()
@@ -1481,6 +1506,31 @@ async fn update_dooray_task(
     let settings = get_required_settings(&deployment).await?;
     let client = create_dooray_client(&settings.dooray_token)?;
 
+    // Process body to convert task URLs to rich mentions
+    let project_code = settings
+        .selected_project_name
+        .as_deref()
+        .unwrap_or("PROJECT");
+
+    let processed_body = match super::dooray_body::process_body_with_mentions(
+        &client,
+        &payload.body,
+        DOORAY_API_BASE,
+        &dooray_project_id,
+        project_code,
+    )
+    .await
+    {
+        Ok(body) => body,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to process body mentions, using raw body: {}",
+                e
+            );
+            payload.body.clone()
+        }
+    };
+
     // Dooray API: PUT /project/v1/projects/{projectId}/posts/{postId}
     let response = client
         .put(format!(
@@ -1490,7 +1540,7 @@ async fn update_dooray_task(
         .json(&serde_json::json!({
             "body": {
                 "mimeType": "text/x-markdown",
-                "content": payload.body
+                "content": processed_body
             }
         }))
         .send()

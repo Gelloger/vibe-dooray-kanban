@@ -18,6 +18,7 @@ interface DesignChatBoxProps {
   isLoading?: boolean;
   placeholder?: string;
   className?: string;
+  repoId?: string;
 }
 
 /** Extract the slash query when the message starts with `/` and has no space yet */
@@ -39,10 +40,11 @@ export function DesignChatBox({
   isLoading = false,
   placeholder,
   className,
+  repoId,
 }: DesignChatBoxProps) {
   const { t } = useTranslation('tasks');
   const [message, setMessage] = useState('');
-  const { commands } = useSlashCommands(BaseCodingAgent.CLAUDE_CODE);
+  const { commands } = useSlashCommands(BaseCodingAgent.CLAUDE_CODE, { repoId });
   const [hintIndex, setHintIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

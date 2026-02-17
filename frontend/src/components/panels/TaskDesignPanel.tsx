@@ -7,6 +7,7 @@ import { CreateDoorayTaskDialog } from '@/components/dialogs/tasks/CreateDoorayT
 import { UpdateDoorayBodyDialog } from '@/components/dialogs/tasks/UpdateDoorayBodyDialog';
 import { useProject } from '@/contexts/ProjectContext';
 import { useDooraySettings } from '@/hooks/useDooray';
+import { useProjectRepos } from '@/hooks/useProjectRepos';
 import { formatDesignMessagesToMarkdown } from '@/utils/formatDesignMessages';
 import {
   useDesignSessionFull,
@@ -85,6 +86,10 @@ const TaskDesignPanel = ({ task }: TaskDesignPanelProps) => {
   const { t } = useTranslation(['tasks', 'dooray']);
   const { projectId } = useProject();
   const { isConnected, settings } = useDooraySettings();
+
+  // Fetch project repos to get repoId for slash commands
+  const { data: repos } = useProjectRepos(projectId);
+  const firstRepoId = repos?.[0]?.id;
 
   // Fetch design session with messages
   const {
@@ -300,6 +305,7 @@ const TaskDesignPanel = ({ task }: TaskDesignPanelProps) => {
             'taskPanel.design.chatPlaceholder',
             'Describe what you want to build...'
           )}
+          repoId={firstRepoId}
         />
       </div>
 
