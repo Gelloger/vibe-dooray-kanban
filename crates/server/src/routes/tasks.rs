@@ -785,12 +785,12 @@ async fn call_claude_for_design(
     }
 
     let output = tokio::time::timeout(
-        std::time::Duration::from_secs(120), // 2 minute timeout
+        std::time::Duration::from_secs(300), // 5 minute timeout
         child.wait_with_output(),
     )
     .await
     .map_err(|_| {
-        tracing::error!("Claude CLI timed out after 120 seconds");
+        tracing::error!("Claude CLI timed out after 300 seconds");
         ApiError::BadRequest("Claude CLI timed out. Please try again with a shorter message.".to_string())
     })?
     .map_err(|e| {
@@ -1063,7 +1063,7 @@ pub async fn design_chat_stream(
         loop {
             line.clear();
             match tokio::time::timeout(
-                std::time::Duration::from_secs(120),
+                std::time::Duration::from_secs(600),
                 reader.read_line(&mut line)
             ).await {
                 Ok(Ok(0)) => {
@@ -1209,7 +1209,7 @@ pub async fn design_chat_stream(
                 Err(_) => {
                     tracing::error!("Claude CLI timed out");
                     let error_event = DesignChatStreamEvent::Error {
-                        message: "Claude CLI timed out after 120 seconds".to_string(),
+                        message: "Claude CLI timed out after 600 seconds".to_string(),
                     };
                     yield Ok(Event::default().json_data(&error_event).unwrap());
                     break;
