@@ -5,22 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   AlertTriangle,
-  Cloud,
-  ExternalLink,
   Plus,
-  Sparkles,
 } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
 import { tasksApi } from '@/lib/api';
 import type { RepoBranchStatus, Workspace } from 'shared/types';
 import { openTaskForm } from '@/lib/openTaskForm';
 import { FeatureShowcaseDialog } from '@/components/dialogs/global/FeatureShowcaseDialog';
-import { BetaWorkspacesDialog } from '@/components/dialogs/global/BetaWorkspacesDialog';
 import { CreateAttemptDialog } from '@/components/dialogs';
 import { ResetToTodoDialog } from '@/components/dialogs/tasks/ResetToTodoDialog';
 import { showcases } from '@/config/showcases';
 import { useUserSystem } from '@/components/ConfigProvider';
-import { useWorkspaceCount } from '@/hooks/useWorkspaceCount';
 import { usePostHog } from 'posthog-js/react';
 
 import { useSearch } from '@/contexts/SearchContext';
@@ -75,7 +70,6 @@ import {
 } from '@/components/ui/breadcrumb';
 import { AttemptHeaderActions } from '@/components/panels/AttemptHeaderActions';
 import { TaskPanelHeaderActions } from '@/components/panels/TaskPanelHeaderActions';
-import { useSelectedOrgId } from '@/stores/useOrganizationStore';
 
 import type { TaskWithAttemptStatus, TaskStatus } from 'shared/types';
 
@@ -152,11 +146,9 @@ export function ProjectTasks() {
 
   const {
     projectId,
-    project,
     isLoading: projectLoading,
     error: projectError,
   } = useProject();
-  const selectedOrgId = useSelectedOrgId();
 
   useEffect(() => {
     enableScope(Scope.KANBAN);
@@ -216,44 +208,6 @@ export function ProjectTasks() {
     seenFeatures,
   ]);
 
-  // Beta workspaces invitation - only fetch count if invitation not yet sent
-  const shouldCheckBetaInvitation =
-    isLoaded && !config?.beta_workspaces_invitation_sent;
-  const { data: workspaceCount } = useWorkspaceCount({
-    enabled: shouldCheckBetaInvitation,
-  });
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (config?.beta_workspaces_invitation_sent) return;
-    if (workspaceCount === undefined || workspaceCount <= 5) return;
-
-    BetaWorkspacesDialog.show().then((joinBeta) => {
-      BetaWorkspacesDialog.hide();
-      void updateAndSaveConfig({
-        beta_workspaces_invitation_sent: true,
-        beta_workspaces: joinBeta === true,
-      });
-      if (joinBeta === true) {
-        navigate('/workspaces');
-      }
-    });
-  }, [
-    isLoaded,
-    config?.beta_workspaces_invitation_sent,
-    workspaceCount,
-    updateAndSaveConfig,
-    navigate,
-  ]);
-
-  // Redirect beta users from old attempt URLs to the new workspaces UI
-  useEffect(() => {
-    if (!isLoaded) return;
-    if (!config?.beta_workspaces) return;
-    if (!attemptId || attemptId === 'latest') return;
-
-    navigate(`/workspaces/${attemptId}`, { replace: true });
-  }, [isLoaded, config?.beta_workspaces, attemptId, navigate]);
 
   const isLatest = attemptId === 'latest';
   const { data: attempts = [], isLoading: isAttemptsLoading } = useTaskAttempts(
@@ -597,19 +551,13 @@ export function ProjectTasks() {
     (task: Task, attemptIdToShow?: string) => {
       if (!projectId) return;
 
-      // If beta_workspaces is enabled, always navigate to task view (not attempt)
-      if (config?.beta_workspaces) {
-        navigateWithSearch(paths.task(projectId, task.id));
-        return;
-      }
-
       if (attemptIdToShow) {
         navigateWithSearch(paths.attempt(projectId, task.id, attemptIdToShow));
       } else {
         navigateWithSearch(`${paths.task(projectId, task.id)}/attempts/latest`);
       }
     },
-    [projectId, navigateWithSearch, config?.beta_workspaces]
+    [projectId, navigateWithSearch]
   );
 
   const selectNextTask = useCallback(() => {
@@ -954,64 +902,6 @@ export function ProjectTasks() {
           </AlertTitle>
           <AlertDescription>{streamError}</AlertDescription>
         </Alert>
-      )}
-
-      {config?.beta_workspaces && (
-        <div className="mx-4 my-4 flex justify-center">
-          <div className="max-w-2xl w-full p-3 border border-orange-500/30 bg-orange-500/5 rounded flex items-center gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              {project?.remote_project_id ? (
-                <Cloud className="h-5 w-5 text-orange-500" />
-              ) : (
-                <Sparkles className="h-5 w-5 text-orange-500" />
-              )}
-              <div>
-                {project?.remote_project_id ? (
-                  <>
-                    <p className="text-sm font-medium">
-                      Project migrated to Cloud
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Access collaboration, tags, priorities, and more
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium">
-                      Migrate this project to the cloud
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Get collaboration, tags, priorities, sub-issues and more
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-            {project?.remote_project_id ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  navigate(
-                    `/projects/${project.remote_project_id}${selectedOrgId ? `?orgId=${selectedOrgId}` : ''}`
-                  )
-                }
-                className="flex items-center gap-1.5"
-              >
-                View project
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/migrate')}
-              >
-                Learn more
-              </Button>
-            )}
-          </div>
-        </div>
       )}
 
       <div className="flex-1 min-h-0">{attemptArea}</div>
